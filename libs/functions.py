@@ -71,7 +71,7 @@ def approveface(face, model, metric, threshold_recognizer, threshold_img_cnt, id
     face_prob = identity_prob[face_name]
     face_ratio = identity_ratio[face_name]
     approved = False
-    threshold_face_prob = (threshold_recognizer/threshold_img_cnt) #* 0.93
+    threshold_face_prob = (threshold_recognizer/threshold_img_cnt)
     
     if identity_cnt[face_name] >= threshold_img_cnt and face_prob <= threshold_face_prob and face_ratio <= threshold_face_prob:
          approved = True

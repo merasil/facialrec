@@ -74,6 +74,7 @@ while True:
         print("Assertion Error! Continuing...")
         continue
     for face in result:
+        print(face)
         mean, fp_mean, values["mean"] = checkThresholds(face, person, values)
     print("-----------------------------------")
     print(result)
