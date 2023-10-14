@@ -55,6 +55,8 @@ print("1. Laura")
 print("2. Max")
 x = input()
 person = persons[int(x)]
+f_faces = 0
+r_faces = 0
 sleep(5)
 
 while True:
@@ -74,13 +76,17 @@ while True:
         print("Assertion Error! Continuing...")
         continue
     for face in result:
-        print(face)
+        if face.empty:
+            f_faces += 1
+        else:
+            r_faces += 1
         mean, fp_mean, values["mean"] = checkThresholds(face, person, values)
     print("-----------------------------------")
-    print(result)
     print("Person:", person)
     print("Thresholds (low, high, mean):", values["low"], values["high"], mean)
     print("FP Thresholds (low, high, mean):", values["fp_low"], values["fp_high"], fp_mean)
+    print("Total Found Faces:", f_faces)
+    print("Total Recognized Faces:", r_faces)
     print("-----------------------------------")
     print()
 print("Finished...")
