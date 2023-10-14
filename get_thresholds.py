@@ -2,6 +2,7 @@ from deepface import DeepFace
 import cv2 as cv
 from libs.functions import *
 from time import sleep
+import configparser
 
 def checkThresholds(face, person, values):
     for index, row in face.iterrows():
@@ -28,40 +29,26 @@ def checkThresholds(face, person, values):
         fp_mean = 0
     return mean, fp_mean, values["mean"]
 
-models = ["VGG-Face",
-        "OpenFace",
-        "Facenet",
-        "Facenet512",
-        "DeepID",
-        "ArcFace",
-        "SFace",
-        "FbDeepFace"]
+##############  Reading Config-File #############
+config = configparser.ConfigParser()
+config.read("config.ini")
 
-detectors = ["opencv",
-        "ssd",
-        "mtcnn",
-        "retinaface",
-        "mediapipe",
-        "yolov8",
-        "yunet"]
-        
-metrics = ["cosine", "euclidean", "euclidean_l2"]
+model = config["basic"]["model"]
+detector = config["basic"]["detector"]
+metric = config["basic"]["metric"]
+stream_url = config["basic"]["stream_url"]
+push_url = config["basic"]["push_url"]
+debug = True
+
+##############  Settings for Camera (URL, Thread, etc.) #############
+stream = CameraBufferCleanerThread(stream_url)
+sleep(5)
 
 persons = ["bastian", "laura", "max"]
-
-model = models[3]
-detector = detectors[6]
-metric = metrics[2]
 db = "db"
 
 values = {"low":100.0, "high":0.0, "mean":[], "fp":0, "fp_low":100.0, "fp_high":0.0, "fp_mean":[]}
 
-cam = cv.VideoCapture("rtsp://viewer:123456@172.23.0.104:554/h264Preview_01_main")
-if not cam.isOpened():
-    print("Cant open Camera")
-    exit()
-
-stream = CameraBufferCleanerThread(cam)
 print("Choose the Person you want to test:")
 print("0. Bastian")
 print("1. Laura")
@@ -95,5 +82,4 @@ while True:
     print("FP Thresholds (low, high, mean):", values["fp_low"], values["fp_high"], fp_mean)
     print("-----------------------------------")
     print()
-cam.release()
 print("Finished...")
