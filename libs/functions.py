@@ -5,8 +5,7 @@ from time import sleep
 from datetime import datetime
 import sys
 
-error_print_every = 10
-error_counter = 10
+error_print_timer = datetime.now()
 
 class CameraBufferCleanerThread(threading.Thread):
     def __init__(self, cameraurl):
@@ -89,10 +88,8 @@ def approveface(face, model, metric, threshold_recognizer, threshold_img_cnt, id
     return approved, face_name, face_mean, face_prob
 
 def checkface(face, database="db", model="Facenet512", metric="euclidean_l2", debug=False):
-    global error_print_every
-    global error_counter
-    if error_counter == 0:
-        error_counter = error_print_every 
+    global error_print_timer
+    diff = datetime.now() - error_print_timer
     faces_recognized = []
     for index, row in face.iterrows():
         for identity in database:
@@ -106,7 +103,7 @@ def checkface(face, database="db", model="Facenet512", metric="euclidean_l2", de
         return faces_recognized[0]["identity"]
     else:
         if debug:
-            if error_counter == error_print_every:
+            if diff.seconds >= 10:
                 if len(faces_recognized) == 0:
                     print("---------------------------------------------", file=sys.stderr)
                     print("{} ERROR: No Face recognized!".format(datetime.now()), file=sys.stderr)
@@ -115,6 +112,5 @@ def checkface(face, database="db", model="Facenet512", metric="euclidean_l2", de
                     print("---------------------------------------------", file=sys.stderr)
                     print("{} ERROR: Found more Faces with Thresholds passed!".format(datetime.now()), file=sys.stderr)
                     print("---------------------------------------------", file=sys.stderr)
-            else:
-                error_counter -= 1
+                error_print_timer = datetime.now()
         return False
