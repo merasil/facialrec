@@ -2,7 +2,11 @@ import cv2 as cv
 import threading
 from deepface import DeepFace
 from time import sleep
+from datetime import datetime
 import sys
+
+error_print_every = 10
+error_counter = 10
 
 class CameraBufferCleanerThread(threading.Thread):
     def __init__(self, cameraurl):
@@ -18,7 +22,7 @@ class CameraBufferCleanerThread(threading.Thread):
         while True:
             if not self.camera.isOpened() or self.counter == 5:
                 print("---------------------------------------------", file=sys.stderr)
-                print("ERROR: Can not access Camera!", file=sys.stderr)
+                print("{} ERROR: Can not access Camera!".format(datetime.now()), file=sys.stderr)
                 print("---------------------------------------------", file=sys.stderr)
                 self.camera.release()
                 self.camera = cv.VideoCapture(self.cameraurl)
@@ -29,7 +33,7 @@ class CameraBufferCleanerThread(threading.Thread):
                 self.last_frame = im.copy()
             else:
                 print("---------------------------------------------", file=sys.stderr)
-                print("ERROR: No Image received!", file=sys.stderr)
+                print("{} ERROR: No Image received!".format(datetime.now()), file=sys.stderr)
                 print("---------------------------------------------", file=sys.stderr)
                 self.counter += 1
                 self.last_frame = None
@@ -85,6 +89,10 @@ def approveface(face, model, metric, threshold_recognizer, threshold_img_cnt, id
     return approved, face_name, face_mean, face_prob
 
 def checkface(face, database="db", model="Facenet512", metric="euclidean_l2", debug=False):
+    global error_print_every
+    global error_counter
+    if error_counter == 0:
+        error_counter = error_print_every 
     faces_recognized = []
     for index, row in face.iterrows():
         for identity in database:
@@ -93,46 +101,20 @@ def checkface(face, database="db", model="Facenet512", metric="euclidean_l2", de
     if len(faces_recognized) == 1:
         if debug:
             print("---------------------------------------------")
-            print("SUCCESS: Face found: {} ---> {}! Threshold: {}".format(faces_recognized[0]["identity"], faces_recognized[0]["value"], database[faces_recognized[0]["identity"]]["threshold"]))
+            print("{} SUCCESS: Face found: {} ---> {}! Threshold: {}".format(datetime.now(), faces_recognized[0]["identity"], faces_recognized[0]["value"], database[faces_recognized[0]["identity"]]["threshold"]))
             print("---------------------------------------------")
         return faces_recognized[0]["identity"]
     else:
         if debug:
-            if len(faces_recognized) == 0:
-                print("---------------------------------------------", file=sys.stderr)
-                print("ERROR: No Face recognized!", file=sys.stderr)
-                print("---------------------------------------------", file=sys.stderr)
+            if error_counter == error_print_every:
+                if len(faces_recognized) == 0:
+                    print("---------------------------------------------", file=sys.stderr)
+                    print("{} ERROR: No Face recognized!".format(datetime.now()), file=sys.stderr)
+                    print("---------------------------------------------", file=sys.stderr)
+                else:
+                    print("---------------------------------------------", file=sys.stderr)
+                    print("{} ERROR: Found more Faces with Thresholds passed!".format(datetime.now()), file=sys.stderr)
+                    print("---------------------------------------------", file=sys.stderr)
             else:
-                print("---------------------------------------------", file=sys.stderr)
-                print("ERROR: Found more Faces with Thresholds passed!", file=sys.stderr)
-                print("---------------------------------------------", file=sys.stderr)
-        return False
-        
-        
-        
-        
-        
-        
-        
-        
-        result = DeepFace.verify(face, database[identity]["path"])
-        if result["verified"] and result["distance"] <= database[face]["threshold"]:
-            if debug:
-                print("---------------------------------------------")
-                print("Found {} ---> Distance: {}\nThreshold: {}")
-                print("---------------------------------------------")
-                print()
-            faces_recognized.append(face)
-    if len(faces_recognized == 1):
-        return faces_recognized[0]
-    else:
-        if debug:
-            if not len(faces_recognized):
-                print("---------------------------------------------")
-                print("ERROR: No Face found!")
-                print("---------------------------------------------")
-            else:
-                print("---------------------------------------------")
-                print("ERROR: Found more Faces with Thresholds passed!")
-                print("---------------------------------------------")
+                error_counter -= 1
         return False

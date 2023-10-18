@@ -54,7 +54,7 @@ while True:
     if stream.last_frame is None:
         if debug:
             print("---------------------------------------------")
-            print("ERROR: Couldnt receive Frame. Continuing with next...")
+            print("{} ERROR: Couldnt receive Frame. Continuing with next...".format(datetime.now()))
             print("---------------------------------------------")
         continue
     try:
