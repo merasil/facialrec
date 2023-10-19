@@ -100,7 +100,7 @@ def checkface(face, database="db", model="Facenet512", metric="euclidean_l2", de
             print("---------------------------------------------")
             print("{} SUCCESS: Face found: {} ---> {}! Threshold: {}".format(datetime.now(), faces_recognized[0]["identity"], faces_recognized[0]["value"], database[faces_recognized[0]["identity"]]["threshold"]))
             print("---------------------------------------------")
-        return faces_recognized[0]["identity"]
+        return faces_recognized[0]["identity"], faces_recognized[0]["value"]
     else:
         if debug:
             if diff.seconds >= 10:
@@ -113,4 +113,4 @@ def checkface(face, database="db", model="Facenet512", metric="euclidean_l2", de
                     print("{} ERROR: Found more Faces with Thresholds passed!".format(datetime.now()), file=sys.stderr)
                     print("---------------------------------------------", file=sys.stderr)
                 error_print_timer = datetime.now()
-        return False
+        return False, 100

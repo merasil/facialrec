@@ -14,12 +14,16 @@ def resetim(database):
             if diff.seconds >= threshold_last_seen:
                 database[identity]["cnt"] = 0
 
+def openDoor(identity, push_url):
+    print("Open Door for {}!".format(identity))
+    requests.get(push_url, {"value":"true"})
+
 def approveclearance(database, push_url):
     for identity in database:
         if database[identity]["cnt"] >= threshold_clearance:
-            print("Open Door for {}!".format(identity))
+            openDoor(identity, push_url)
             database[identity]["cnt"] = 0
-            requests.get(push_url, {"value":"true"})
+
 
 ##############  Reading Config-File #############
 config = configparser.ConfigParser()
@@ -42,6 +46,7 @@ for folder in os.scandir(path_db):
                 
 threshold_clearance = int(config["thresholds"]["clearance"])
 threshold_last_seen = int(config["thresholds"]["last_seen"])
+threshold_pretty_sure = float(config["thresholds"]["pretty_sure"])
 
 ##############  Settings for Camera (URL, Thread, etc.) #############
 stream = CameraBufferCleanerThread(stream_url)
@@ -71,10 +76,13 @@ while True:
         #     # print("---------------------------------------------")
         continue
     for face in faces:
-        name = checkface(face=face, database=db, model=model, metric=metric, debug=True)
+        name, value = checkface(face=face, database=db, model=model, metric=metric, debug=True)
         if name:
             db[name]["cnt"] += 1
             db[name]["last_seen"] = datetime.now()
-            approveclearance(db, push_url)
+            if value < threshold_pretty_sure:
+                openDoor(name, push_url)
+            else:
+                approveclearance(db, push_url)
             continue
 print("Finished!")
