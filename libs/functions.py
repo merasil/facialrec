@@ -74,7 +74,7 @@ class RecordingThread(threading.Thread):
         self.stream = stream
         self.duration = duration
         self.running = False
-        super(MotionDetectionThread, self).__init__(daemon=True)
+        super(RecordingThread, self).__init__(daemon=True)
     
     def run(self):
         self.running = True
