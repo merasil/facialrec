@@ -1,5 +1,6 @@
 from deepface import DeepFace
 import cv2 as cv
+import numpy as np
 from time import sleep
 from datetime import datetime
 import os
@@ -25,17 +26,15 @@ def approveclearance(database, push_url):
             database[identity]["cnt"] = 0
 
 
-##############  Reading Config-File #############
+############## Reading Config-File #############
 config = configparser.ConfigParser()
 config.read("config.ini")
 
-model = config["basic"]["model"]
-detector = config["basic"]["detector"]
-metric = config["basic"]["metric"]
 stream_url = config["basic"]["stream_url"]
 push_url = config["basic"]["push_url"]
 debug = True
 
+############## Setting up Database #############
 path_db = config["database"]["path"]
 db = {}
 for folder in os.scandir(path_db):
@@ -43,18 +42,30 @@ for folder in os.scandir(path_db):
             db[folder.name] = {"path":"{}/{}/{}.jpg".format(path_db,folder.name,folder.name), "threshold":0.0, "last_seen":datetime.now(), "cnt":0}
             if folder.name in config["thresholds"]:
                 db[folder.name]["threshold"] = float(config["thresholds"][folder.name])
-                
+
+############## Setting up Face Recognition Model #############
+model = config["face_recognition"]["model"]
+detector = config["face_recognition"]["detector"]
+metric = config["face_recognition"]["metric"]
+
+############## Setting up Background-Separation Model #############
+bgm = cv.createBackgroundSubtractorMOG2()
+bgm_learning_rate = int(config["motion_detection"]["learning_rate"])
+
+############## Setting up Thresholds #############              
 threshold_clearance = int(config["thresholds"]["clearance"])
 threshold_last_seen = int(config["thresholds"]["last_seen"])
 threshold_pretty_sure = float(config["thresholds"]["pretty_sure"])
+threshold_motion_detection = float(config["thresholds"]["motion_detection"])
 
-##############  Settings for Camera (URL, Thread, etc.) #############
+############## Settings for Camera (URL, Thread, etc.) #############
 stream = CameraBufferCleanerThread(stream_url)
 sleep(5)
 print(db)
 
 ##############  Starting the Application #############
 while True:
+    # Reseting DB if Face isnt recognized for a period of time...
     resetim(db)
     if stream.last_frame is None:
         if debug:
@@ -62,8 +73,17 @@ while True:
             print("{} ERROR: Couldnt receive Frame. Continuing with next...".format(datetime.now()))
             print("---------------------------------------------")
         continue
+    
+    # Checking if Motion is detected...
+    img = stream.last_frame.copy()
+    motionmask = bgm.apply(img, bgm_learning_rate)
+    avg = np.average(cv.threshold(motionmask, 200, 255, cv.THRESH_BINARY)[1])
+    if avg < threshold_motion_detection:
+        sleep(0.1)
+        continue
+    
+    # If we got Motion we can check for Faces to detect...
     try:
-        img = stream.last_frame.copy()
         faces = DeepFace.find(img_path=img, detector_backend=detector, db_path=path_db, distance_metric=metric, model_name=model, silent=True)
     except KeyboardInterrupt:
         print("Killing Process...")
@@ -75,6 +95,8 @@ while True:
         #     # print(e)
         #     # print("---------------------------------------------")
         continue
+    
+    # If we got Faces we can check if we know them...
     for face in faces:
         name, value = checkface(face=face, database=db, model=model, metric=metric, debug=True)
         if name:
