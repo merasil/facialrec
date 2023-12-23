@@ -59,7 +59,7 @@ threshold_motion_detection = float(config["thresholds"]["motion_detection"])
 
 ############## Settings for Camera (URL, Thread, etc.) #############
 stream = CameraBufferCleanerThread(stream_url)
-motion = MotionDetectionThread(stream, bgm, bgm_learning_rate, threshold_motion_detection)
+motion = MotionDetectionThread(stream, bgm, bgm_learning_rate, threshold_motion_detection, debug)
 sleep(5)
 print(db)
 
