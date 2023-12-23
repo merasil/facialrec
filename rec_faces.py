@@ -24,6 +24,18 @@ def approveclearance(database, push_url):
         if database[identity]["cnt"] >= threshold_clearance:
             openDoor(identity, push_url)
             database[identity]["cnt"] = 0
+            
+def recordingThread():
+    global running
+    running = True
+    start_time = datetime.now()
+    filename = "{}.avi".format(start_time)
+    writer = cv.VideoWriter(filename, cv.VideoWriter_fourcc('M','J','P','G'), 10, (640,480))
+    while (datetime.now() - start_time).seconds < 30:
+        img = stream.last_frame.copy()
+        writer.write(img)
+        sleep(0.1)
+    running = False
 
 ############## Reading Config-File #############
 config = configparser.ConfigParser()
@@ -62,7 +74,7 @@ threshold_motion_detection = float(config["thresholds"]["motion_detection"])
 ############## Settings for Camera (URL, Thread, etc.) #############
 stream = CameraBufferCleanerThread(stream_url)
 motion = MotionDetectionThread(stream, bgm, bgm_learning_rate, threshold_motion_detection, debug)
-record = RecordingThread(stream, 30)
+running = False
 sleep(5)
 print(db)
 
@@ -80,8 +92,8 @@ while True:
     # Checking if Motion is detected...
     try:
         if motion.motion:
-            if not record.running:
-                record.run()
+            if not running:
+                rec = threading.Thread(target=recordingThread, daemon=True)
             img = stream.last_frame.copy()
             faces = DeepFace.find(img_path=img, detector_backend=detector, db_path=path_db, distance_metric=metric, model_name=model, silent=True)
         else:

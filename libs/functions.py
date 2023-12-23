@@ -69,25 +69,6 @@ class MotionDetectionThread(threading.Thread):
             self.motion = True
             self.last_motion_det = datetime.now()
 
-class RecordingThread(threading.Thread):
-    def __init__(self, stream, duration):
-        self.stream = stream
-        self.duration = duration
-        self.running = False
-        super(RecordingThread, self).__init__(daemon=True)
-    
-    def run(self):
-        self.running = True
-        start_time = datetime.now()
-        filename = "{}.avi".format(start_time)
-        writer = cv.VideoWriter(filename, cv.VideoWriter_fourcc('M','J','P','G'), 10, (2560,1440))
-        while (datetime.now() - start_time).seconds < 30:
-            img = self.stream.last_frame.copy()
-            writer.write(img)
-            sleep(0.1)
-        self.running = False
-        return 0
-
 def approveface(face, model, metric, threshold_recognizer, threshold_img_cnt, identities, debug=False):
     identity_cnt = {}
     identity_mean = {}
