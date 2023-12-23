@@ -32,7 +32,11 @@ config.read("config.ini")
 
 stream_url = config["basic"]["stream_url"]
 push_url = config["basic"]["push_url"]
-debug = True
+debug = False
+if config["basic"]["debug"] == "True":
+    debug = True
+    
+last_motion_det = datetime.now()
 
 ############## Setting up Database #############
 path_db = config["database"]["path"]
@@ -76,36 +80,38 @@ while True:
     
     # Checking if Motion is detected...
     img = stream.last_frame.copy()
-    # motionmask = bgm.apply(img, bgm_learning_rate)
-    # avg = np.average(cv.threshold(motionmask, 200, 255, cv.THRESH_BINARY)[1])
-    # if avg < threshold_motion_detection:
-    #     sleep(0.1)
-    #     continue
-    
-    # # If we got Motion we can check for Faces to detect...
-    # print("Motion detected!")
-    try:
-        faces = DeepFace.find(img_path=img, detector_backend=detector, db_path=path_db, distance_metric=metric, model_name=model, silent=True)
-    except KeyboardInterrupt:
-        print("Killing Process...")
-        break
-    except ValueError as e:
-        # if debug:
-        #     # print("---------------------------------------------")
-        #     # print("ERROR: No Face found! Continuing...")
-        #     # print(e)
-        #     # print("---------------------------------------------")
+    motionmask = bgm.apply(img, bgm_learning_rate)
+    avg = np.average(cv.threshold(motionmask, 200, 255, cv.THRESH_BINARY)[1])
+    if avg < threshold_motion_detection:
+        sleep(0.1)
         continue
-    
-    # If we got Faces we can check if we know them...
-    for face in faces:
-        name, value = checkface(face=face, database=db, model=model, metric=metric, debug=True)
-        if name:
-            db[name]["cnt"] += 1
-            db[name]["last_seen"] = datetime.now()
-            if value < threshold_pretty_sure:
-                openDoor(name, push_url)
-            else:
-                approveclearance(db, push_url)
+    last_motion_det = datetime.now()
+    if debug:
+            print("---------------------------------------------", file=sys.stderr)
+            print("{} SUCCESS: Motion detected: {}! Threshold: {}".format(datetime.now(), avg, threshold_motion_detection), file=sys.stderr)
+            print("---------------------------------------------", file=sys.stderr)
+            
+    # TODO: Start recording...
+    # If we got Motion we can check for Faces to detect...
+    while((datetime.now() - last_motion_det).seconds < 30):
+        try:
+            img = stream.last_frame.copy()
+            faces = DeepFace.find(img_path=img, detector_backend=detector, db_path=path_db, distance_metric=metric, model_name=model, silent=True)
+        except KeyboardInterrupt:
+            print("Killing Process...")
+            break
+        except ValueError as e:
             continue
+        
+        # If we got Faces we can check if we know them...
+        for face in faces:
+            name, value = checkface(face=face, database=db, model=model, metric=metric, debug=debug)
+            if name:
+                db[name]["cnt"] += 1
+                db[name]["last_seen"] = datetime.now()
+                if value < threshold_pretty_sure:
+                    openDoor(name, push_url)
+                else:
+                    approveclearance(db, push_url)
+                continue
 print("Finished!")

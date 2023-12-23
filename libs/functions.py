@@ -79,11 +79,11 @@ def approveface(face, model, metric, threshold_recognizer, threshold_img_cnt, id
     if identity_cnt[face_name] >= threshold_img_cnt and face_prob <= threshold_face_prob and face_ratio <= threshold_face_prob:
          approved = True
     if debug:
-        print("---------------------------------------------")
-        print("Threshold probability: {}".format(threshold_face_prob))
-        print("Recognized: {} with Mean: {} ({}) and Ratio: {}!\nApproved: {}".format(face_name, face_mean, face_prob, face_ratio, str(approved)))
-        print("---------------------------------------------")
-        print(face_name)
+        print("---------------------------------------------", file=sys.stderr)
+        print("Threshold probability: {}".format(threshold_face_prob), file=sys.stderr)
+        print("Recognized: {} with Mean: {} ({}) and Ratio: {}!\nApproved: {}".format(face_name, face_mean, face_prob, face_ratio, str(approved)), file=sys.stderr)
+        print("---------------------------------------------", file=sys.stderr)
+        print(face_name, file=sys.stderr)
         print()
     return approved, face_name, face_mean, face_prob
 
@@ -97,9 +97,9 @@ def checkface(face, database="db", model="Facenet512", metric="euclidean_l2", de
                 faces_recognized.append({"identity":identity, "value":row[f"{model}_{metric}"]})
     if len(faces_recognized) == 1:
         if debug:
-            print("---------------------------------------------")
-            print("{} SUCCESS: Face found: {} ---> {}! Threshold: {}".format(datetime.now(), faces_recognized[0]["identity"], faces_recognized[0]["value"], database[faces_recognized[0]["identity"]]["threshold"]))
-            print("---------------------------------------------")
+            print("---------------------------------------------", file=sys.stderr)
+            print("{} SUCCESS: Face found: {} ---> {}! Threshold: {}".format(datetime.now(), faces_recognized[0]["identity"], faces_recognized[0]["value"], database[faces_recognized[0]["identity"]]["threshold"]), file=sys.stderr)
+            print("---------------------------------------------", file=sys.stderr)
         return faces_recognized[0]["identity"], faces_recognized[0]["value"]
     else:
         if debug:
