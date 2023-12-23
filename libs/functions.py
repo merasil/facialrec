@@ -74,16 +74,16 @@ class RecordingThread(threading.Thread):
         self.stream = stream
         self.duration = duration
         self.running = False
-        self.start_time = datetime.now()
-        self.filename = "{}.avi".format(self.start_time)
-        self.writer = cv.VideoWriter(self.filename, cv.VideoWriter_fourcc('M','J','P','G'), 10, (2560,1440))
         super(MotionDetectionThread, self).__init__(daemon=True)
     
     def run(self):
         self.running = True
+        start_time = datetime.now()
+        filename = "{}.avi".format(start_time)
+        writer = cv.VideoWriter(filename, cv.VideoWriter_fourcc('M','J','P','G'), 10, (2560,1440))
         while (datetime.now() - self.start_time).seconds < 30:
             img = self.stream.last_frame.copy()
-            self.writer.write(img)
+            writer.write(img)
             sleep(0.1)
         self.running = False
         return 0
