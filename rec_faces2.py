@@ -69,49 +69,56 @@ print(db)
 
 ##############  Starting the Application #############
 while True:
-    # Reseting DB if Face isnt recognized for a period of time...
-    resetim(db)
-    if stream.last_frame is None:
-        if debug:
-            print("---------------------------------------------")
-            print("{} ERROR: Couldnt receive Frame. Continuing with next...".format(datetime.now()))
-            print("---------------------------------------------")
-        continue
-    
-    # Checking if Motion is detected...
-    img = stream.last_frame.copy()
-    motionmask = bgm.apply(img, bgm_learning_rate)
-    avg = np.average(cv.threshold(motionmask, 200, 255, cv.THRESH_BINARY)[1])
-    if avg < threshold_motion_detection:
-        sleep(0.1)
-        continue
-    last_motion_det = datetime.now()
-    if debug:
-            print("---------------------------------------------", file=sys.stderr)
-            print("{} SUCCESS: Motion detected: {}! Threshold: {}".format(datetime.now(), avg, threshold_motion_detection), file=sys.stderr)
-            print("---------------------------------------------", file=sys.stderr)
-            
-    # TODO: Start recording...
-    # If we got Motion we can check for Faces to detect...
-    while((datetime.now() - last_motion_det).seconds < 30):
-        try:
-            img = stream.last_frame.copy()
-            faces = DeepFace.find(img_path=img, detector_backend=detector, db_path=path_db, distance_metric=metric, model_name=model, silent=True)
-        except KeyboardInterrupt:
-            print("Killing Process...")
-            break
-        except ValueError as e:
+    try:
+        # Reseting DB if Face isnt recognized for a period of time...
+        resetim(db)
+        if stream.last_frame is None:
+            if debug:
+                print("---------------------------------------------")
+                print("{} ERROR: Couldnt receive Frame. Continuing with next...".format(datetime.now()))
+                print("---------------------------------------------")
             continue
         
-        # If we got Faces we can check if we know them...
-        for face in faces:
-            name, value = checkface(face=face, database=db, model=model, metric=metric, debug=debug)
-            if name:
-                db[name]["cnt"] += 1
-                db[name]["last_seen"] = datetime.now()
-                if value < threshold_pretty_sure:
-                    openDoor(name, push_url)
-                else:
-                    approveclearance(db, push_url)
+        # Checking if Motion is detected...
+        img = stream.last_frame.copy()
+        motionmask = bgm.apply(img, bgm_learning_rate)
+        avg = np.average(cv.threshold(motionmask, 200, 255, cv.THRESH_BINARY)[1])
+        if avg < threshold_motion_detection:
+            sleep(0.1)
+            continue
+        last_motion_det = datetime.now()
+        if debug:
+                print("---------------------------------------------", file=sys.stderr)
+                print("{} SUCCESS: Motion detected: {}! Threshold: {}".format(datetime.now(), avg, threshold_motion_detection), file=sys.stderr)
+                print("---------------------------------------------", file=sys.stderr)
+                
+        # TODO: Start recording...
+        # If we got Motion we can check for Faces to detect...
+        while((datetime.now() - last_motion_det).seconds < 30):
+            try:
+                img = stream.last_frame.copy()
+                faces = DeepFace.find(img_path=img, detector_backend=detector, db_path=path_db, distance_metric=metric, model_name=model, silent=True)
+            except KeyboardInterrupt:
+                print("Killing Process...")
+                break
+            except ValueError as e:
                 continue
+            
+            # If we got Faces we can check if we know them...
+            for face in faces:
+                name, value = checkface(face=face, database=db, model=model, metric=metric, debug=debug)
+                if name:
+                    db[name]["cnt"] += 1
+                    db[name]["last_seen"] = datetime.now()
+                    if value < threshold_pretty_sure:
+                        openDoor(name, push_url)
+                    else:
+                        approveclearance(db, push_url)
+                    continue
+    except KeyboardInterrupt:
+            print("Killing Process...")
+            break
+    except:
+        print("Some Error happened...")
+        break
 print("Finished!")
