@@ -60,7 +60,7 @@ class MotionDetectionThread(threading.Thread):
             motionmask = self.bgm.apply(img, self.bgm_learning_rate)
             avg = np.average(cv.threshold(motionmask, 200, 255, cv.THRESH_BINARY)[1])
             if avg < self.threshold_motion_detection:
-                sleep(0.1)
+                sleep(0.2)
                 continue
             if self.debug:
                 print("---------------------------------------------", file=sys.stderr)
@@ -68,10 +68,25 @@ class MotionDetectionThread(threading.Thread):
                 print("---------------------------------------------", file=sys.stderr)
             self.motion = True
             self.last_motion_det = datetime.now()
-            
+
+class RecordingThread(threading.Thread):
+    def __init__(self, stream, duration):
+        self.stream = stream
+        self.duration = duration
+        self.running = False
+        self.start_time = datetime.now()
+        self.filename = "{}.avi".format(self.start_time)
+        self.writer = cv.VideoWriter(self.filename, cv.VideoWriter_fourcc('M','J','P','G'), 10, (2560,1440))
+        super(MotionDetectionThread, self).__init__(daemon=True)
     
-    # # If we got Motion we can check for Faces to detect...
-    # print("Motion detected!")
+    def run(self):
+        self.running = True
+        while (datetime.now() - self.start_time).seconds < 30:
+            img = self.stream.last_frame.copy()
+            self.writer.write(img)
+            sleep(0.1)
+        self.running = False
+        return 0
 
 def approveface(face, model, metric, threshold_recognizer, threshold_img_cnt, identities, debug=False):
     identity_cnt = {}

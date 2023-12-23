@@ -31,7 +31,9 @@ config.read("config.ini")
 
 stream_url = config["basic"]["stream_url"]
 push_url = config["basic"]["push_url"]
-debug = True
+debug = False
+if config["basic"]["debug"] == "True":
+    debug = True
 
 ############## Setting up Database #############
 path_db = config["database"]["path"]
@@ -60,6 +62,7 @@ threshold_motion_detection = float(config["thresholds"]["motion_detection"])
 ############## Settings for Camera (URL, Thread, etc.) #############
 stream = CameraBufferCleanerThread(stream_url)
 motion = MotionDetectionThread(stream, bgm, bgm_learning_rate, threshold_motion_detection, debug)
+record = RecordingThread(stream, 30)
 sleep(5)
 print(db)
 
@@ -77,6 +80,8 @@ while True:
     # Checking if Motion is detected...
     try:
         if motion.motion:
+            if not record.running:
+                record.start()
             img = stream.last_frame.copy()
             faces = DeepFace.find(img_path=img, detector_backend=detector, db_path=path_db, distance_metric=metric, model_name=model, silent=True)
         else:
