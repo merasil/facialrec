@@ -1,108 +1,101 @@
 from deepface import DeepFace
 import cv2 as cv
+import numpy as np
 from time import sleep
 from datetime import datetime
 import os
 import requests
-from random import randint
+import configparser
 from libs.functions import *
 
-def resetim(identity_matrix):
-    for identity in identity_matrix:
-        if identity_matrix[identity]["cnt"] != 0:
-            diff = datetime.now() - identity_matrix[identity]["last"]
+def resetim(database):
+    for identity in database:
+        if database[identity]["cnt"] != 0:
+            diff = datetime.now() - database[identity]["last_seen"]
             if diff.seconds >= threshold_last_seen:
-                identity_matrix[identity]["cnt"] = 0
+                database[identity]["cnt"] = 0
 
-def approveclearance(identity_matrix):
-    for identity in identity_matrix:
-        if identity_matrix[identity]["cnt"] >= threshold_clearance:
-            print("Open Door for {}!".format(identity))
-            identity_matrix[identity]["cnt"] = 0
-            requests.get("http://kvsi6:8087/set/0_userdata.0.Status_Au%C3%9Fen.EG_FaceRec", {"value":"true"})
+def openDoor(identity, push_url):
+    print("Open Door for {}!".format(identity))
+    requests.get(push_url, {"value":"true"})
 
-models = ["VGG-Face",
-        "OpenFace",
-        "Facenet",
-        "Facenet512",
-        "DeepID",
-        "ArcFace",
-        "SFace",
-        "FbDeepFace"]
+def approveclearance(database, push_url):
+    for identity in database:
+        if database[identity]["cnt"] >= threshold_clearance:
+            openDoor(identity, push_url)
+            database[identity]["cnt"] = 0
 
-detectors = ["opencv",
-        "ssd",
-        "mtcnn",
-        "retinaface",
-        "mediapipe",
-        "yolov8",
-        "yunet"]
-        
-metrics = ["cosine", "euclidean", "euclidean_l2"]
+############## Reading Config-File #############
+config = configparser.ConfigParser()
+config.read("config.ini")
 
+stream_url = config["basic"]["stream_url"]
+push_url = config["basic"]["push_url"]
 debug = True
 
-model = models[3]
-detector = detectors[6]
-metric = metrics[2]
-db = "db"
-threshold_recognizer = 0.98
-threshold_clearance = 3
-threshold_last_seen = 5
-threshold_img_cnt = 1
-threshold_last_motion = 30
-last_motion = datetime.now()
-identity_matrix = {}
-identities = set()
-for folder in os.scandir(db):
+############## Setting up Database #############
+path_db = config["database"]["path"]
+db = {}
+for folder in os.scandir(path_db):
         if folder.is_dir():
-                identity_matrix[folder.name] = {"cnt":0, "last":datetime.now()}
-                identities.add(folder.name)
-print(identities)
+            db[folder.name] = {"path":"{}/{}/{}.jpg".format(path_db,folder.name,folder.name), "threshold":0.0, "last_seen":datetime.now(), "cnt":0}
+            if folder.name in config["thresholds"]:
+                db[folder.name]["threshold"] = float(config["thresholds"][folder.name])
 
-cam = cv.VideoCapture("rtsp://viewer:123456@172.23.0.104:554/h264Preview_01_main")
-if not cam.isOpened():
-    print("Cant open Camera")
-    exit()
+############## Setting up Face Recognition Model #############
+model = config["face_recognition"]["model"]
+detector = config["face_recognition"]["detector"]
+metric = config["face_recognition"]["metric"]
 
-stream = CameraBufferCleanerThread(cam)
+############## Setting up Background-Separation Model #############
+bgm = cv.createBackgroundSubtractorMOG2()
+bgm_learning_rate = int(config["motion_detection"]["learning_rate"])
+
+############## Setting up Thresholds #############              
+threshold_clearance = int(config["thresholds"]["clearance"])
+threshold_last_seen = int(config["thresholds"]["last_seen"])
+threshold_pretty_sure = float(config["thresholds"]["pretty_sure"])
+threshold_motion_detection = float(config["thresholds"]["motion_detection"])
+
+############## Settings for Camera (URL, Thread, etc.) #############
+stream = CameraBufferCleanerThread(stream_url)
+motion = MotionDetectionThread(stream, bgm, bgm_learning_rate, threshold_motion_detection)
 sleep(5)
+print(db)
 
+##############  Starting the Application #############
 while True:
-    resetim(identity_matrix)
+    # Reseting DB if Face isnt recognized for a period of time...
+    resetim(db)
     if stream.last_frame is None:
         if debug:
-            print("Couldnt receive Frame. Continuing with next...")
+            print("---------------------------------------------", file=sys.stderr)
+            print("{} ERROR: Couldnt receive Frame. Continuing with next...".format(datetime.now()), file=sys.stderr)
+            print("---------------------------------------------", file=sys.stderr)
         continue
+    
+    # Checking if Motion is detected...
     try:
-        img = stream.last_frame.copy()
-        result = DeepFace.find(img_path=img, detector_backend=detector, db_path=db, distance_metric=metric, model_name=model, silent=True)
+        if motion.motion:
+            img = stream.last_frame.copy()
+            faces = DeepFace.find(img_path=img, detector_backend=detector, db_path=path_db, distance_metric=metric, model_name=model, silent=True)
+        else:
+            continue
     except KeyboardInterrupt:
         print("Killing Process...")
         break
-    except ValueError:
-        # if debug:
-        #     print("No Face found. Continuing...")
+    except ValueError as e:
         continue
-    for face in result:
-        approved, name, mean, prob = approveface(face, model, metric, threshold_recognizer, threshold_img_cnt, identities, True)
-        if approved:
-            if debug:
-                print("Found", name, "--->", mean)
-            identity_matrix[name]["cnt"] += 1
-            identity_matrix[name]["last"] = datetime.now()
-            approveclearance(identity_matrix)
+    
+    # If we got Faces we can check if we know them...
+    for face in faces:
+        name, value = checkface(face=face, database=db, model=model, metric=metric, debug=True)
+        if name:
+            db[name]["cnt"] += 1
+            db[name]["last_seen"] = datetime.now()
+            if value < threshold_pretty_sure:
+                openDoor(name, push_url)
+            else:
+                approveclearance(db, push_url)
             continue
-        elif name != "none":
-            if debug:
-                print("Found probably {} but not enough Images recognized to be confident!".format(name))
-            continue
-        else:
-            if debug:
-                print("Face not recognized!")
-            diff = datetime.now() - last_motion
-            if diff.seconds > threshold_last_motion:
-                #requests.get("http://kvsi6:8087/set/0_userdata.0.Status_Au%C3%9Fen.EG_MotionDetect", {"value":"true"})
-                last_motion = datetime.now()
-cam.release()
 print("Finished!")

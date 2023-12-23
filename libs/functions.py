@@ -1,4 +1,5 @@
 import cv2 as cv
+import numpy as np
 import threading
 from deepface import DeepFace
 from time import sleep
@@ -37,6 +38,40 @@ class CameraBufferCleanerThread(threading.Thread):
                 self.counter += 1
                 self.last_frame = None
             sleep(0.015)
+
+class MotionDetectionThread(threading.Thread):
+    def __init__(self, stream, bgm, bgm_learning_rate, threshold_motion_detection, debug=False):
+        self.stream = stream
+        self.bgm = bgm
+        self.bgm_learning_rate = bgm_learning_rate
+        self.threshold_motion_detection = threshold_motion_detection
+        self.debug = debug
+        self.last_motion_det = datetime.now()
+        self.motion = False
+        sleep(8)
+        super(MotionDetectionThread, self).__init__(daemon=True)
+        self.start()
+        
+    def run(self):
+        while True:
+            if (datetime.now() - self.last_motion_det).seconds > 30:
+                self.motion = False
+            img = self.stream.last_frame.copy()
+            motionmask = self.bgm.apply(img, self.bgm_learning_rate)
+            avg = np.average(cv.threshold(motionmask, 200, 255, cv.THRESH_BINARY)[1])
+            if avg < self.threshold_motion_detection:
+                sleep(0.1)
+                continue
+            if self.debug:
+                print("---------------------------------------------", file=sys.stderr)
+                print("{} SUCCESS: Motion detected: {}! Threshold: {}".format(datetime.now(), avg, self.threshold_motion_detection), file=sys.stderr)
+                print("---------------------------------------------", file=sys.stderr)
+            self.motion = True
+            self.last_motion_det = datetime.now()
+            
+    
+    # # If we got Motion we can check for Faces to detect...
+    # print("Motion detected!")
 
 def approveface(face, model, metric, threshold_recognizer, threshold_img_cnt, identities, debug=False):
     identity_cnt = {}
