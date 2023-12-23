@@ -76,13 +76,14 @@ while True:
     
     # Checking if Motion is detected...
     img = stream.last_frame.copy()
-    motionmask = bgm.apply(img, bgm_learning_rate)
-    avg = np.average(cv.threshold(motionmask, 200, 255, cv.THRESH_BINARY)[1])
-    if avg < threshold_motion_detection:
-        sleep(0.1)
-        continue
+    # motionmask = bgm.apply(img, bgm_learning_rate)
+    # avg = np.average(cv.threshold(motionmask, 200, 255, cv.THRESH_BINARY)[1])
+    # if avg < threshold_motion_detection:
+    #     sleep(0.1)
+    #     continue
     
-    # If we got Motion we can check for Faces to detect...
+    # # If we got Motion we can check for Faces to detect...
+    # print("Motion detected!")
     try:
         faces = DeepFace.find(img_path=img, detector_backend=detector, db_path=path_db, distance_metric=metric, model_name=model, silent=True)
     except KeyboardInterrupt:
