@@ -1,7 +1,7 @@
 import threading
 from time import sleep
 
-def testthread(a):
+def testthread():
     global b
     b = True
     i = 0
@@ -12,7 +12,7 @@ def testthread(a):
     return 0
 
 b = False
-x = threading.Thread(target=testthread, args=(b,))
+x = threading.Thread(target=testthread)
 x.start()
 i = 0
 while(i < 100):

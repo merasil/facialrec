@@ -25,7 +25,7 @@ def approveclearance(database, push_url):
             openDoor(identity, push_url)
             database[identity]["cnt"] = 0
             
-def recordingThread():
+def recordingThread(stream):
     global running
     running = True
     start_time = datetime.now()
@@ -93,7 +93,7 @@ while True:
     try:
         if motion.motion:
             if not running:
-                rec = threading.Thread(target=recordingThread, daemon=True)
+                rec = threading.Thread(target=recordingThread, args=(stream,))
             img = stream.last_frame.copy()
             faces = DeepFace.find(img_path=img, detector_backend=detector, db_path=path_db, distance_metric=metric, model_name=model, silent=True)
         else:
