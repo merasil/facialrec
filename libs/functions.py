@@ -81,7 +81,7 @@ class RecordingThread(threading.Thread):
         start_time = datetime.now()
         filename = "{}.avi".format(start_time)
         writer = cv.VideoWriter(filename, cv.VideoWriter_fourcc('M','J','P','G'), 10, (2560,1440))
-        while (datetime.now() - self.start_time).seconds < 30:
+        while (datetime.now() - start_time).seconds < 30:
             img = self.stream.last_frame.copy()
             writer.write(img)
             sleep(0.1)
