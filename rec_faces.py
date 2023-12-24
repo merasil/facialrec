@@ -34,9 +34,12 @@ def recordingThread(state):
         print("---------------------------------------------", file=sys.stderr)
     start_time = datetime.now()
     filename = "{}{}{}_{}{}{}.avi".format(start_time.year, start_time.month, start_time.day, start_time.hour, start_time.minute, start_time.second)
-    writer = cv.VideoWriter(filename, cv.VideoWriter_fourcc('M','J','P','G'), 10, (640,480))
+    writer = cv.VideoWriter(filename, cv.VideoWriter_fourcc('M','P','4','2'), 10, (2560,1440))
     while (datetime.now() - start_time).seconds < 30:
-        img = state["stream"].last_frame.copy()
+        try:
+            img = state["stream"].last_frame.copy()
+        except:
+            continue
         writer.write(img)
         sleep(0.1)
     state["running"] = False
