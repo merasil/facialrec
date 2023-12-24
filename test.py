@@ -1,20 +1,24 @@
 import threading
 from time import sleep
 
-def testthread():
-    global b
-    b = True
+def testthread(state):
+    print(state)
+    state["running"] = True
     i = 0
     while(i < 10):
         i += 1
         sleep(1)
-    b = False
+    state["running"] = False
     return 0
 
-b = False
-x = threading.Thread(target=testthread)
-x.start()
+state = [1]
+state[0] = {"running": False, "xyz": 1}
+print(state[0])
+
+for s in state:
+    x = threading.Thread(target=testthread, args=(s, ))
+    x.start()
 i = 0
 while(i < 100):
-    print(b)
+    print(state[0])
     sleep(0.5)

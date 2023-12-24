@@ -25,17 +25,26 @@ def approveclearance(database, push_url):
             openDoor(identity, push_url)
             database[identity]["cnt"] = 0
             
-def recordingThread(stream):
-    global running
-    running = True
+def recordingThread(state):
+    state["running"] = True
+    global debug
+    if debug:
+        print("---------------------------------------------", file=sys.stderr)
+        print("{} SUCCESS: Started Recording Thread...".format(datetime.now()), file=sys.stderr)
+        print("---------------------------------------------", file=sys.stderr)
     start_time = datetime.now()
-    filename = "{}.avi".format(start_time)
+    filename = "{}{}{}_{}{}{}.avi".format(start_time.year, start_time.month, start_time.day, start_time.hour, start_time.minute, start_time.second)
     writer = cv.VideoWriter(filename, cv.VideoWriter_fourcc('M','J','P','G'), 10, (640,480))
     while (datetime.now() - start_time).seconds < 30:
-        img = stream.last_frame.copy()
+        img = state["stream"].last_frame.copy()
         writer.write(img)
         sleep(0.1)
-    running = False
+    state["running"] = False
+    if debug:
+        print("---------------------------------------------", file=sys.stderr)
+        print("{} SUCCES: Closed Recording Thread...".format(datetime.now()), file=sys.stderr)
+        print("---------------------------------------------", file=sys.stderr)
+    return 0
 
 ############## Reading Config-File #############
 config = configparser.ConfigParser()
@@ -74,7 +83,11 @@ threshold_motion_detection = float(config["thresholds"]["motion_detection"])
 ############## Settings for Camera (URL, Thread, etc.) #############
 stream = CameraBufferCleanerThread(stream_url)
 motion = MotionDetectionThread(stream, bgm, bgm_learning_rate, threshold_motion_detection, debug)
-running = False
+
+thread_states = [1]
+for i in range(0, len(thread_states)):
+    thread_states[i] = {"stream":stream, "running":False}
+
 sleep(5)
 print(db)
 
@@ -92,9 +105,16 @@ while True:
     # Checking if Motion is detected...
     try:
         if motion.motion:
-            if not running:
-                print("Starting Recordthread")
-                rec = threading.Thread(target=recordingThread, args=(stream,))
+            for state in thread_states:
+                try:
+                    if not state["running"]:
+                        rec = threading.Thread(target=recordingThread, args=(state,))
+                        rec.start()
+                except:
+                    print("---------------------------------------------", file=sys.stderr)
+                    print("{} ERROR: Couldnt start Recording Thread...".format(datetime.now()), file=sys.stderr)
+                    print("---------------------------------------------", file=sys.stderr)
+                    continue
             img = stream.last_frame.copy()
             faces = DeepFace.find(img_path=img, detector_backend=detector, db_path=path_db, distance_metric=metric, model_name=model, silent=True)
         else:
