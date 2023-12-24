@@ -108,6 +108,7 @@ while True:
     # Checking if Motion is detected...
     try:
         if motion.motion:
+            print("Motion detected...")
             for state in thread_states:
                 try:
                     if not state["running"]:
@@ -119,6 +120,7 @@ while True:
                     print("---------------------------------------------", file=sys.stderr)
                     continue
             img = stream.last_frame.copy()
+            print("Checking Face...")
             faces = DeepFace.find(img_path=img, detector_backend=detector, db_path=path_db, distance_metric=metric, model_name=model, silent=True)
         else:
             continue
