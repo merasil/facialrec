@@ -48,7 +48,6 @@ class MotionDetectionThread(threading.Thread):
         self.debug = debug
         self.last_motion_det = datetime.now()
         self.motion = False
-        sleep(8)
         super(MotionDetectionThread, self).__init__(daemon=True)
         self.start()
         
@@ -56,7 +55,10 @@ class MotionDetectionThread(threading.Thread):
         while True:
             if (datetime.now() - self.last_motion_det).seconds > 30:
                 self.motion = False
-            img = self.stream.last_frame.copy()
+            img = self.stream.last_frame
+            if img is None:
+                print("Couldnt get image...")
+                continue
             motionmask = self.bgm.apply(img, self.bgm_learning_rate)
             avg = np.average(cv.threshold(motionmask, 200, 255, cv.THRESH_BINARY)[1])
             if avg < self.threshold_motion_detection:

@@ -36,9 +36,8 @@ def recordingThread(state):
     filename = "{}{}{}_{}{}{}.avi".format(start_time.year, start_time.month, start_time.day, start_time.hour, start_time.minute, start_time.second)
     writer = cv.VideoWriter(filename, cv.VideoWriter_fourcc('M','P','4','2'), 10, (2560,1440))
     while (datetime.now() - start_time).seconds < 30:
-        try:
-            img = state["stream"].last_frame.copy()
-        except:
+        img = state["stream"].last_frame
+        if img is None:
             continue
         writer.write(img)
         sleep(0.1)
@@ -106,48 +105,49 @@ while True:
         continue
     
     # Checking if Motion is detected...
-    try:
-        print("{} Looking for Motion!".format(datetime.now()))
-        if motion.motion:
-            print("{} Starting Thread Loop!".format(datetime.now()))
-            for state in thread_states:
-                try:
-                    if not state["running"]:
-                        print("{} Starting Thread!".format(datetime.now()))
-                        rec = threading.Thread(target=recordingThread, args=(state,))
-                        rec.start()
-                        print("{} Finished Starting Thread!".format(datetime.now()))
-                except:
-                    print("---------------------------------------------", file=sys.stderr)
-                    print("{} ERROR: Couldnt start Recording Thread...".format(datetime.now()), file=sys.stderr)
-                    print("---------------------------------------------", file=sys.stderr)
-                    continue
-            print("{} Copy Frame!".format(datetime.now()))
-            img = stream.last_frame.copy()
-            print("{} Looking for Faces!".format(datetime.now()))
+    print("{} Looking for Motion!".format(datetime.now()))
+    if motion.motion:
+        # print("{} Starting Thread Loop!".format(datetime.now()))
+        # for state in thread_states:
+        #     try:
+        #         if not state["running"]:
+        #             print("{} Starting Thread!".format(datetime.now()))
+        #             rec = threading.Thread(target=recordingThread, args=(state,))
+        #             rec.start()
+        #             print("{} Finished Starting Thread!".format(datetime.now()))
+        #     except:
+        #         print("---------------------------------------------", file=sys.stderr)
+        #         print("{} ERROR: Couldnt start Recording Thread...".format(datetime.now()), file=sys.stderr)
+        #         print("---------------------------------------------", file=sys.stderr)
+        #         continue
+        print("{} Copy Frame!".format(datetime.now()))
+        img = stream.last_frame
+        print("{} Looking for Faces!".format(datetime.now()))
+        try:
             faces = DeepFace.find(img_path=img, detector_backend=detector, db_path=path_db, distance_metric=metric, model_name=model, silent=True)
             print("{} Finished looking for Faces!".format(datetime.now()))
             print()
-        else:
-            print("{} No Motion!".format(datetime.now()))
+        except KeyboardInterrupt:
+            print("Killing Process...")
+            break
+        except ValueError as e:
+            print("{} No Face found!".format(datetime.now()))
             print()
             continue
-    except KeyboardInterrupt:
-        print("Killing Process...")
-        break
-    except ValueError as e:
-        print(e)
-        continue
     
-    # If we got Faces we can check if we know them...
-    for face in faces:
-        name, value = checkface(face=face, database=db, model=model, metric=metric, debug=True)
-        if name:
-            db[name]["cnt"] += 1
-            db[name]["last_seen"] = datetime.now()
-            if value < threshold_pretty_sure:
-                openDoor(name, push_url)
-            else:
-                approveclearance(db, push_url)
-            continue
+        # If we got Faces we can check if we know them...
+        for face in faces:
+            name, value = checkface(face=face, database=db, model=model, metric=metric, debug=True)
+            if name:
+                db[name]["cnt"] += 1
+                db[name]["last_seen"] = datetime.now()
+                if value < threshold_pretty_sure:
+                    openDoor(name, push_url)
+                else:
+                    approveclearance(db, push_url)
+                continue
+    else:
+        print("{} No Motion!".format(datetime.now()))
+        print()
+        continue
 print("Finished!")
