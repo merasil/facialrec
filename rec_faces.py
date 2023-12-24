@@ -107,27 +107,36 @@ while True:
     
     # Checking if Motion is detected...
     try:
+        print("{} Looking for Motion!".format(datetime.now()))
         if motion.motion:
-            print("Motion detected...")
+            print("{} Starting Thread Loop!".format(datetime.now()))
             for state in thread_states:
                 try:
                     if not state["running"]:
+                        print("{} Starting Thread!".format(datetime.now()))
                         rec = threading.Thread(target=recordingThread, args=(state,))
                         rec.start()
+                        print("{} Finished Starting Thread!".format(datetime.now()))
                 except:
                     print("---------------------------------------------", file=sys.stderr)
                     print("{} ERROR: Couldnt start Recording Thread...".format(datetime.now()), file=sys.stderr)
                     print("---------------------------------------------", file=sys.stderr)
                     continue
+            print("{} Copy Frame!".format(datetime.now()))
             img = stream.last_frame.copy()
-            print("Checking Face...")
+            print("{} Looking for Faces!".format(datetime.now()))
             faces = DeepFace.find(img_path=img, detector_backend=detector, db_path=path_db, distance_metric=metric, model_name=model, silent=True)
+            print("{} Finished looking for Faces!".format(datetime.now()))
+            print()
         else:
+            print("{} No Motion!".format(datetime.now()))
+            print()
             continue
     except KeyboardInterrupt:
         print("Killing Process...")
         break
     except ValueError as e:
+        print(e)
         continue
     
     # If we got Faces we can check if we know them...

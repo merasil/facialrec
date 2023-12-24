@@ -31,15 +31,17 @@ def recordingThread(state):
         print("---------------------------------------------", file=sys.stderr)
     return 0
 
+print("{} Starting Program!".format(datetime.now()))
 state = [1]
 stream = CameraBufferCleanerThread("rtsp://viewer:123456@172.23.0.104:554/h264Preview_01_main")
 sleep(5)
 state[0] = {"running": False, "stream": stream}
 print(state[0])
-
+print("{} Starting Threads!".format(datetime.now()))
 for s in state:
     x = threading.Thread(target=recordingThread, args=(s, ))
     x.start()
+print("{} Finished Starting Threads!".format(datetime.now()))
 i = 0
 while(i < 100):
     print(state[0])
