@@ -58,7 +58,16 @@ threshold_pretty_sure = float(config["thresholds"]["pretty_sure"])
 ############## Settings for Camera (URL, Thread, etc.) #############
 stream = CameraBufferCleanerThread(stream_url)
 sleep(5)
+print("---------------------------------------------", file=sys.stderr)
 print(db, file=sys.stderr)
+print("---------------------------------------------", file=sys.stderr)
+print("---------------------------------------------", file=sys.stderr)
+print("{} SUCCESS: Loading Model...".format(datetime.now(), file=sys.stderr))
+print("---------------------------------------------", file=sys.stderr)
+DeepFace.build_model(model)
+print("---------------------------------------------", file=sys.stderr)
+print("{} SUCCESS: Finished loading Model...".format(datetime.now(), file=sys.stderr))
+print("---------------------------------------------", file=sys.stderr)
 
 ##############  Starting the Application #############
 while True:
