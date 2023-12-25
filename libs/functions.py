@@ -36,7 +36,6 @@ class CameraBufferCleanerThread(threading.Thread):
                 print("{} ERROR: No Image received!".format(datetime.now()), file=sys.stderr)
                 print("---------------------------------------------", file=sys.stderr)
                 self.counter += 1
-                self.last_frame = None
             sleep(0.015)
 
 def approveface(face, model, metric, threshold_recognizer, threshold_img_cnt, identities, debug=False):

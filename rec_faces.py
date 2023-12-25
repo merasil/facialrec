@@ -31,6 +31,7 @@ config.read("config.ini")
 
 stream_url = config["basic"]["stream_url"]
 push_url = config["basic"]["push_url"]
+motion_url = config["basic"]["motion_url"]
 debug = False
 if config["basic"]["debug"] == "True":
     debug = True
@@ -69,7 +70,15 @@ while True:
             print("{} ERROR: Couldnt receive Frame. Continuing with next...".format(datetime.now()), file=sys.stderr)
             print("---------------------------------------------", file=sys.stderr)
         continue
-
+    motion = requests.get(motion_url)
+    if motion.status_code not in range(200, 204):
+        print("---------------------------------------------", file=sys.stderr)
+        print("{} ERROR: Couldnt receive Motion Status. Continuing with Face Detection...".format(datetime.now()), file=sys.stderr)
+        print("---------------------------------------------", file=sys.stderr)
+    else:
+        motion = motion.json()
+        if motion["val"] == "OFF":
+            continue
     img = stream.last_frame
     try:
         faces = DeepFace.find(img_path=img, detector_backend=detector, db_path=path_db, distance_metric=metric, model_name=model, silent=True)
