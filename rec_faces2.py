@@ -77,11 +77,11 @@ while True:
         print("Killing Process...")
         break
     except ValueError as e:
-        if debug:
-            print("---------------------------------------------")
-            print("ERROR: No Face found! Continuing...")
-            print(e)
-            print("---------------------------------------------")
+        # if debug:
+        #     print("---------------------------------------------")
+        #     print("ERROR: No Face found! Continuing...")
+        #     print(e)
+        #     print("---------------------------------------------")
         continue
     
     # If we got Faces we can check if we know them...
