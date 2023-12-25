@@ -62,11 +62,11 @@ print("---------------------------------------------", file=sys.stderr)
 print(db, file=sys.stderr)
 print("---------------------------------------------", file=sys.stderr)
 print("---------------------------------------------", file=sys.stderr)
-print("{} INFO: Loading Model...".format(datetime.now(), file=sys.stderr))
+print("{} INFO: Loading Model...".format(datetime.now()), file=sys.stderr)
 print("---------------------------------------------", file=sys.stderr)
 DeepFace.build_model(model)
 print("---------------------------------------------", file=sys.stderr)
-print("{} INFO: Finished loading Model...".format(datetime.now(), file=sys.stderr))
+print("{} INFO: Finished loading Model...".format(datetime.now()), file=sys.stderr)
 print("---------------------------------------------", file=sys.stderr)
 
 ##############  Starting the Application #############
