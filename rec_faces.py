@@ -57,7 +57,7 @@ threshold_pretty_sure = float(config["thresholds"]["pretty_sure"])
 ############## Settings for Camera (URL, Thread, etc.) #############
 stream = CameraBufferCleanerThread(stream_url)
 sleep(5)
-print(db)
+print(db, file=sys.stderr)
 
 ##############  Starting the Application #############
 while True:
@@ -65,12 +65,12 @@ while True:
     resetim(db)
     if stream.last_frame is None:
         if debug:
-            print("---------------------------------------------")
-            print("{} ERROR: Couldnt receive Frame. Continuing with next...".format(datetime.now()))
-            print("---------------------------------------------")
+            print("---------------------------------------------", file=sys.stderr)
+            print("{} ERROR: Couldnt receive Frame. Continuing with next...".format(datetime.now()), file=sys.stderr)
+            print("---------------------------------------------", file=sys.stderr)
         continue
 
-    img = stream.last_frame.copy()
+    img = stream.last_frame
     try:
         faces = DeepFace.find(img_path=img, detector_backend=detector, db_path=path_db, distance_metric=metric, model_name=model, silent=True)
     except KeyboardInterrupt:

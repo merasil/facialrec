@@ -29,7 +29,7 @@ class CameraBufferCleanerThread(threading.Thread):
                 self.counter = 0
                 sleep(5)
             ret, im = self.camera.read()
-            if ret:
+            if ret and im is not None:
                 self.last_frame = im.copy()
             else:
                 print("---------------------------------------------", file=sys.stderr)
