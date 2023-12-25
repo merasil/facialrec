@@ -62,11 +62,11 @@ print("---------------------------------------------", file=sys.stderr)
 print(db, file=sys.stderr)
 print("---------------------------------------------", file=sys.stderr)
 print("---------------------------------------------", file=sys.stderr)
-print("{} SUCCESS: Loading Model...".format(datetime.now(), file=sys.stderr))
+print("{} INFO: Loading Model...".format(datetime.now(), file=sys.stderr))
 print("---------------------------------------------", file=sys.stderr)
 DeepFace.build_model(model)
 print("---------------------------------------------", file=sys.stderr)
-print("{} SUCCESS: Finished loading Model...".format(datetime.now(), file=sys.stderr))
+print("{} INFO: Finished loading Model...".format(datetime.now(), file=sys.stderr))
 print("---------------------------------------------", file=sys.stderr)
 
 ##############  Starting the Application #############
@@ -82,11 +82,15 @@ while True:
     motion = requests.get(motion_url)
     if motion.status_code not in range(200, 204):
         print("---------------------------------------------", file=sys.stderr)
-        print("{} ERROR: Couldnt receive Motion Status. Continuing with Face Detection...".format(datetime.now()), file=sys.stderr)
+        print("{} WARN: Couldnt receive Motion Status. Continuing with Face Detection...".format(datetime.now()), file=sys.stderr)
         print("---------------------------------------------", file=sys.stderr)
     else:
         motion = motion.json()
         if motion["val"] == "OFF":
+            if debug:
+                print("---------------------------------------------", file=sys.stderr)
+                print("{} INFO: No Motion detected. Continuing with next...".format(datetime.now()), file=sys.stderr)
+                print("---------------------------------------------", file=sys.stderr)
             continue
     img = stream.last_frame
     try:

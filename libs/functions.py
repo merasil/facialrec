@@ -106,7 +106,7 @@ def checkface(face, database="db", model="Facenet512", metric="euclidean_l2", de
             if diff.seconds >= 10:
                 if len(faces_recognized) == 0:
                     print("---------------------------------------------", file=sys.stderr)
-                    print("{} ERROR: No Face recognized!".format(datetime.now()), file=sys.stderr)
+                    print("{} INFO: No Face recognized!".format(datetime.now()), file=sys.stderr)
                     print("---------------------------------------------", file=sys.stderr)
                 else:
                     print("---------------------------------------------", file=sys.stderr)
