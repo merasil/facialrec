@@ -33,7 +33,7 @@ config.read("config.ini")
 stream_url = config["basic"]["stream_url"]
 push_url = config["basic"]["push_url"]
 motion_url = config["basic"]["motion_url"]
-threads_cnt = int(config["basic"]["threads"])
+threads_cnt = str(config["basic"]["threads"])
 debug = False
 if config["basic"]["debug"] == "True":
     debug = True
