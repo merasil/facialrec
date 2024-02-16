@@ -33,7 +33,6 @@ config.read("config.ini")
 stream_url = config["basic"]["stream_url"]
 push_url = config["basic"]["push_url"]
 motion_url = config["basic"]["motion_url"]
-threads_cnt = int(config["basic"]["threads"])
 debug = False
 if config["basic"]["debug"] == "True":
     debug = True
@@ -60,16 +59,6 @@ threshold_pretty_sure = float(config["thresholds"]["pretty_sure"])
 ############## Settings for Camera (URL, Thread, etc.) #############
 stream = CameraBufferCleanerThread(stream_url)
 sleep(5)
-print("---------------------------------------------", file=sys.stderr)
-print("{} INFO: Setting Threads to {}".format(datetime.now(), threads_cnt), file=sys.stderr)
-num_threads = 4
-os.environ["OMP_NUM_THREADS"] = "4"
-os.environ["TF_NUM_INTRAOP_THREADS"] = "4"
-os.environ["TF_NUM_INTEROP_THREADS"] = "4"
-tf.config.threading.set_intra_op_parallelism_threads(threads_cnt)
-tf.config.threading.set_inter_op_parallelism_threads(threads_cnt)
-tf.config.set_soft_device_placement(True)
-print("---------------------------------------------", file=sys.stderr)
 print("---------------------------------------------", file=sys.stderr)
 print(db, file=sys.stderr)
 print("---------------------------------------------", file=sys.stderr)
