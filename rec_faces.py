@@ -50,6 +50,8 @@ model = config["face_recognition"]["model"]
 detector = config["face_recognition"]["detector"]
 metric = config["face_recognition"]["metric"]
 
+
+
 ############## Setting up Thresholds #############              
 threshold_clearance = int(config["thresholds"]["clearance"])
 threshold_last_seen = int(config["thresholds"]["last_seen"])
