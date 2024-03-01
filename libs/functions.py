@@ -49,17 +49,17 @@ def approveface(face, model, metric, threshold_recognizer, threshold_img_cnt, id
         return False, "none", 100.0, 100.0
 
     for index, row in face.iterrows():
-        if index == 0 and row[f"{model}_{metric}"] > threshold_recognizer:
+        if index == 0 and row["distance"] > threshold_recognizer:
             return False, "none", 100.0, 100.0
-        if row[f"{model}_{metric}"] < threshold_recognizer:
+        if row["distance"] < threshold_recognizer:
             for identity in identities:
                 if identity in row["identity"]:
                     if identity in identity_cnt:
                         identity_cnt[identity] += 1
-                        identity_mean[identity] += float(row[f"{model}_{metric}"])
+                        identity_mean[identity] += float(row["distance"])
                     else:
                         identity_cnt[identity] = 1
-                        identity_mean[identity] = float(row[f"{model}_{metric}"])
+                        identity_mean[identity] = float(row["distance"])
                     faces_cnt += 1
                     break
             continue
@@ -75,7 +75,7 @@ def approveface(face, model, metric, threshold_recognizer, threshold_img_cnt, id
     face_ratio = identity_ratio[face_name]
     approved = False
     threshold_face_prob = (threshold_recognizer/threshold_img_cnt)
-    
+
     if identity_cnt[face_name] >= threshold_img_cnt and face_prob <= threshold_face_prob and face_ratio <= threshold_face_prob:
          approved = True
     if debug:
@@ -93,8 +93,8 @@ def checkface(face, database="db", model="Facenet512", metric="euclidean_l2", de
     faces_recognized = []
     for index, row in face.iterrows():
         for identity in database:
-            if identity in row["identity"] and row[f"{model}_{metric}"] <= database[identity]["threshold"]:
-                faces_recognized.append({"identity":identity, "value":row[f"{model}_{metric}"]})
+            if identity in row["identity"] and row["distance"] <= database[identity]["threshold"]:
+                faces_recognized.append({"identity":identity, "value":row["distance"]})
     if len(faces_recognized) == 1:
         if debug:
             print("---------------------------------------------", file=sys.stderr)
