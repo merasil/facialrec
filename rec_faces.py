@@ -6,7 +6,11 @@ from datetime import datetime
 import os
 import requests
 import configparser
+import tensorflow as tf
 from libs.functions import *
+
+gpus = tf.config.experimental.list_physical_devices('GPU')
+tf.config.experimental.set_memory_growth(gpus[0], True)
 
 def resetim(database):
     for identity in database:
