@@ -95,7 +95,7 @@ while True:
                 print("---------------------------------------------", file=sys.stderr)
                 print("{} INFO: No Motion detected. Continuing with next...".format(datetime.now()), file=sys.stderr)
                 print("---------------------------------------------", file=sys.stderr)
-            sleep(0.1)
+            sleep(1.0)
             continue
     img = stream.last_frame
     try:
