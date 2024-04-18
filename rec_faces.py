@@ -99,7 +99,7 @@ while True:
             continue
     img = stream.last_frame
     try:
-        faces = DeepFace.find(img_path=img, detector_backend=detector, db_path=path_db, distance_metric=metric, model_name=model, silent=debug)
+        faces = DeepFace.find(img_path=img, detector_backend=detector, db_path=path_db, distance_metric=metric, model_name=model, silent=False)
     except KeyboardInterrupt:
         print("Killing Process...")
         break
