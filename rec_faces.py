@@ -117,7 +117,7 @@ while True:
     
     # If we got Faces we can check if we know them...
     for face in faces:
-        name, value = checkface(threshold_model, face=face, database=db, debug=True)
+        name, value = checkface(threshold=threshold_model, face=face, database=db, debug=True)
         if name:
             db[name]["cnt"] += 1
             db[name]["last_seen"] = datetime.now()
