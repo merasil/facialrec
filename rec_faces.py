@@ -15,6 +15,9 @@ try:
 except:
     print("ERROR: Could not find any GPU!")
 
+def str2bool(v):
+    return str(v).lower() in ("yes", "y", "true", "t", "1")
+
 def resetim(database):
     for identity in database:
         if database[identity]["cnt"] != 0:
@@ -39,9 +42,10 @@ config.read("config.ini")
 stream_url = config["basic"]["stream_url"]
 push_url = config["basic"]["push_url"]
 motion_url = config["basic"]["motion_url"]
-debug = False
-if config["basic"]["debug"] == "True":
-    debug = True
+debug = str2bool(config["basic"]["debug"])
+#debug = False
+#if config["basic"]["debug"] == "True":
+#    debug = True
 
 ############## Setting up Database #############
 path_db = config["database"]["path"]
@@ -56,6 +60,7 @@ if model == "yunet":
     os.environ["yunet_score_threshold"] = "0.8"
 detector = config["face_recognition"]["detector"]
 metric = config["face_recognition"]["metric"]
+alignment = str2bool(config["face_recognition"]["alignment"])
 
 ############## Setting up Thresholds #############
 threshold_model = DeepFace.verification.find_threshold(model, metric)  
@@ -103,7 +108,7 @@ while True:
             continue
     img = stream.last_frame
     try:
-        faces = DeepFace.find(img_path=img, detector_backend=detector, db_path=path_db, distance_metric=metric, model_name=model, silent=not debug)
+        faces = DeepFace.find(img_path=img, detector_backend=detector, align=alignment, db_path=path_db, distance_metric=metric, model_name=model, silent=not debug)
     except KeyboardInterrupt:
         print("Killing Process...")
         break
