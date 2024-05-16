@@ -54,6 +54,8 @@ for folder in os.scandir(path_db):
 
 ############## Setting up Face Recognition Model #############
 model = config["face_recognition"]["model"]
+if model == "yunet":
+    os.environ["yunet_score_threshold"] = "0.8"
 detector = config["face_recognition"]["detector"]
 metric = config["face_recognition"]["metric"]
 
