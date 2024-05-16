@@ -48,9 +48,7 @@ path_db = config["database"]["path"]
 db = {}
 for folder in os.scandir(path_db):
         if folder.is_dir():
-            db[folder.name] = {"path":"{}/{}/{}.jpg".format(path_db,folder.name,folder.name), "threshold":0.0, "last_seen":datetime.now(), "cnt":0}
-            if folder.name in config["thresholds"]:
-                db[folder.name]["threshold"] = float(config["thresholds"][folder.name])
+            db[folder.name] = {"path":"{}/{}/{}.jpg".format(path_db,folder.name,folder.name), "last_seen":datetime.now(), "cnt":0}
 
 ############## Setting up Face Recognition Model #############
 model = config["face_recognition"]["model"]
