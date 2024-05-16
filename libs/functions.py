@@ -87,18 +87,18 @@ def approveface(face, model, metric, threshold_recognizer, threshold_img_cnt, id
         print()
     return approved, face_name, face_mean, face_prob
 
-def checkface(face, database="db", model="Facenet512", metric="euclidean_l2", debug=False):
+def checkface(threshold, face, database="db", debug=False):
     global error_print_timer
     diff = datetime.now() - error_print_timer
     faces_recognized = []
     for index, row in face.iterrows():
         for identity in database:
-            if identity in row["identity"] and row["distance"] <= database[identity]["threshold"]:
+            if identity in row["identity"]:
                 faces_recognized.append({"identity":identity, "value":row["distance"]})
     if len(faces_recognized) == 1:
         if debug:
             print("---------------------------------------------", file=sys.stderr)
-            print("{} SUCCESS: Face found: {} ---> {}! Threshold: {}".format(datetime.now(), faces_recognized[0]["identity"], faces_recognized[0]["value"], database[faces_recognized[0]["identity"]]["threshold"]), file=sys.stderr)
+            print("{} SUCCESS: Face found: {} ---> {}! Threshold: {}".format(datetime.now(), faces_recognized[0]["identity"], faces_recognized[0]["value"], threshold), file=sys.stderr)
             print("---------------------------------------------", file=sys.stderr)
         return faces_recognized[0]["identity"], faces_recognized[0]["value"]
     else:

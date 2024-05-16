@@ -59,10 +59,11 @@ if model == "yunet":
 detector = config["face_recognition"]["detector"]
 metric = config["face_recognition"]["metric"]
 
-############## Setting up Thresholds #############              
+############## Setting up Thresholds #############
+threshold_model = DeepFace.verification.find_threshold(model, metric)  
 threshold_clearance = int(config["thresholds"]["clearance"])
 threshold_last_seen = int(config["thresholds"]["last_seen"])
-threshold_pretty_sure = float(config["thresholds"]["pretty_sure"])
+threshold_pretty_sure = threshold_model - (threshold_model * 0.07)
 
 ############## Settings for Camera (URL, Thread, etc.) #############
 stream = CameraBufferCleanerThread(stream_url)
@@ -118,7 +119,7 @@ while True:
     
     # If we got Faces we can check if we know them...
     for face in faces:
-        name, value = checkface(face=face, database=db, model=model, metric=metric, debug=True)
+        name, value = checkface(threshold_model, face=face, database=db, debug=True)
         if name:
             db[name]["cnt"] += 1
             db[name]["last_seen"] = datetime.now()
