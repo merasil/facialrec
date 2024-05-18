@@ -61,6 +61,7 @@ if model == "yunet":
 detector = config["face_recognition"]["detector"]
 metric = config["face_recognition"]["metric"]
 alignment = str2bool(config["face_recognition"]["alignment"])
+face_detect_enf = str2bool(config["face_recognition"]["face_detection_enforce"])
 
 ############## Setting up Thresholds #############
 threshold_model = DeepFace.verification.find_threshold(model, metric)  
@@ -108,7 +109,7 @@ while True:
             continue
     img = stream.last_frame
     try:
-        faces = DeepFace.find(img_path=img, detector_backend=detector, align=alignment, db_path=path_db, distance_metric=metric, model_name=model, silent=not debug)
+        faces = DeepFace.find(img_path=img, detector_backend=detector, align=alignment, enforce_detection=face_detect_enf, db_path=path_db, distance_metric=metric, model_name=model, silent=not debug)
     except KeyboardInterrupt:
         print("Killing Process...")
         break
