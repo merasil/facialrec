@@ -122,6 +122,10 @@ while True:
     
     # If we got Faces we can check if we know them...
     for face in faces:
+        if debug:
+                print("---------------------------------------------", file=sys.stderr)
+                print("{} INFO: Face detected!".format(datetime.now()), file=sys.stderr)
+                print("---------------------------------------------", file=sys.stderr)
         name, value = checkface(threshold=threshold_model, face=face, database=db, debug=True)
         if name:
             db[name]["cnt"] += 1

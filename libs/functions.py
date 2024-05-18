@@ -92,6 +92,10 @@ def checkface(threshold, face, database="db", debug=False):
     diff = datetime.now() - error_print_timer
     faces_recognized = []
     for index, row in face.iterrows():
+        if debug:
+                print("---------------------------------------------", file=sys.stderr)
+                print("{}".format(row), file=sys.stderr)
+                print("---------------------------------------------", file=sys.stderr)
         for identity in database:
             if identity in row["identity"]:
                 faces_recognized.append({"identity":identity, "value":row["distance"]})
