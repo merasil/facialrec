@@ -94,7 +94,6 @@ while True:
                     print("{} ERROR: No Face found! Continuing...".format(datetime.now()), file=sys.stderr)
                     print(e, file=sys.stderr)
                     print("---------------------------------------------")
-                sleep(0.1)
                 continue
             except:
                 if debug:
