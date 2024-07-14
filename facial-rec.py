@@ -104,9 +104,21 @@ while True:
                 stream.stop()
                 exit()
             for face in faces:
-                for identity in db:
-                    if identity in face["identity"]:
-                        db[identity]["cnt"] += 1
-                        db[identity]["last_seen"] = datetime.now()
-                        if face["distance"] <= threshold_pretty_sure or db[identity]["cnt"] >= threshold_clearance:
-                            openDoor(identity, push_url)
+                if face.empty == True:
+                    if debug:
+                        print("---------------------------------------------")
+                        print("{} INFO: No Face recognized! Continuing...".format(datetime.now()), file=sys.stderr)
+                        print("---------------------------------------------")
+                    continue
+                else:
+                    for identity in db:
+                        if identity in face.iloc[0]["identity"]:
+                            if debug:
+                                print("---------------------------------------------")
+                                print("{} INFO: Success! Found Face: {} with Value --> {}".format(datetime.now(), identity, face.iloc[0]["distance"]), file=sys.stderr)
+                                print("---------------------------------------------")
+                            db[identity]["cnt"] += 1
+                            db[identity]["last_seen"] = datetime.now()
+                            if face.iloc[0]["distance"] <= threshold_pretty_sure or db[identity]["cnt"] >= threshold_clearance:
+                                openDoor(identity, push_url)
+                            break
