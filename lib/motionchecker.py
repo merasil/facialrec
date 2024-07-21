@@ -19,7 +19,6 @@ class MotionChecker:
             print("---------------------------------------------", file=sys.stderr)
             print("{} INFO: MotionChecker started...".format(datetime.now()), file=sys.stderr)
             print("---------------------------------------------", file=sys.stderr)
-            self.update()
         else:
             print("---------------------------------------------", file=sys.stderr)
             print("{} INFO: MotionChecker is already running...".format(datetime.now()), file=sys.stderr)
