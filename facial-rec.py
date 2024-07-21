@@ -9,6 +9,7 @@ import configparser
 import tensorflow as tf
 from include.functions import *
 from lib.streamreader import StreamReader
+from lib.motionchecker import MotionChecker
 
 gpus = tf.config.experimental.list_physical_devices('GPU')
 try:
@@ -50,6 +51,11 @@ threshold_pretty_sure = threshold_model - (threshold_model * float(config["thres
 ############## Settings for Camera (URL, Thread, etc.) #############
 stream = StreamReader(stream_url)
 stream.start()
+
+############## Settings for MotionChecker (URL, Thread, etc.) ##############
+motion = MotionChecker(motion_url)
+motion.start()
+
 sleep(5)
 print("---------------------------------------------", file=sys.stderr)
 print(db, file=sys.stderr)
@@ -65,8 +71,8 @@ print("---------------------------------------------", file=sys.stderr)
 ##############  Starting the Application #############
 while True:
     resetDB(db, threshold_last_seen)
-    motion = checkMotion(motion_url)
-    if not motion:
+    got_motion = motion.result
+    if not got_motion:
         if debug:
             print("---------------------------------------------", file=sys.stderr)
             print("{} INFO: No Motion detected. Continuing with next...".format(datetime.now()), file=sys.stderr)
