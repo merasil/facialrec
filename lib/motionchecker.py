@@ -1,5 +1,6 @@
 import requests
 import time
+import threading
 from datetime import datetime
 import sys
 
@@ -13,10 +14,16 @@ class MotionChecker:
     def start(self):
         if not self.running:
             self.running = True
+            self.thread = threading.Thread(target=self.update, args=())
+            self.thread.start()
             print("---------------------------------------------", file=sys.stderr)
             print("{} INFO: MotionChecker started...".format(datetime.now()), file=sys.stderr)
             print("---------------------------------------------", file=sys.stderr)
             self.update()
+        else:
+            print("---------------------------------------------", file=sys.stderr)
+            print("{} INFO: MotionChecker is already running...".format(datetime.now()), file=sys.stderr)
+            print("---------------------------------------------", file=sys.stderr)
 
     def update(self):
         while self.running:
@@ -39,7 +46,8 @@ class MotionChecker:
 
     def stop(self):
         self.running = False
+        self.session.close()
+        self.thread.join()
 
     def __del__(self):
         self.stop()
-        self.session.close()
