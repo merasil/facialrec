@@ -93,6 +93,7 @@ while True:
             except KeyboardInterrupt:
                 print("Killing Process...")
                 stream.stop()
+                motion.stop()
                 exit()
             except ValueError as e:
                 if debug:
@@ -107,6 +108,7 @@ while True:
                     print("{} ERROR: Unknown Error! Exiting...".format(datetime.now()), file=sys.stderr)
                     print("---------------------------------------------")
                 stream.stop()
+                motion.stop()
                 exit()
             for face in faces:
                 if face.empty == True:
