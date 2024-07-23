@@ -28,6 +28,8 @@ class StreamReader:
 
     def capture_frames(self):
         while self.running:
+            if self.capture is None or not self.capture.isOpened():
+                self.connect()
             success, frame = self.capture.read()
             if success:
                 with self.lock:
