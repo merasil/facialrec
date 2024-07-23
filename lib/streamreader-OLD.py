@@ -1,42 +1,45 @@
-import threading
 import cv2
-import sys
+import threading
+from queue import Queue, Empty
 import time
 from datetime import datetime
+import sys
 
 class StreamReader:
     def __init__(self, rtsp_url, reconnect_delay=5):
         self.rtsp_url = rtsp_url
-        self.reconnect_delay = reconnect_delay
         self.capture = None
-        self.frame = None
-        self.lock = threading.Lock()
+        self.frame_queue = Queue(maxsize=1)
         self.running = False
+        self.reconnect_delay = reconnect_delay
 
     def start(self):
         if not self.running:
             self.running = True
-            self.thread = threading.Thread(target=self.capture_frames)
+            self.thread = threading.Thread(target=self.update, args=())
             self.thread.start()
             print("---------------------------------------------", file=sys.stderr)
             print("{} INFO: Stream started...".format(datetime.now()), file=sys.stderr)
+            print("{} INFO: Stream Queuesize: {}...".format(datetime.now(), self.frame_queue.maxsize), file=sys.stderr)
             print("---------------------------------------------", file=sys.stderr)
         else:
             print("---------------------------------------------", file=sys.stderr)
             print("{} INFO: Stream is already running...".format(datetime.now()), file=sys.stderr)
             print("---------------------------------------------", file=sys.stderr)
 
-    def capture_frames(self):
+    def update(self):
         while self.running:
-            success, frame = self.capture.read()
-            if success:
-                with self.lock:
-                    self.frame = frame
-            else:
+            if self.capture is None or not self.capture.isOpened():
+                self.connect()
+            ret, frame = self.capture.read()
+            if not ret:
                 print("---------------------------------------------", file=sys.stderr)
                 print("{} ERROR: Failed to read Image...".format(datetime.now()), file=sys.stderr)
                 print("---------------------------------------------", file=sys.stderr)
                 self.handle_failure()
+                continue
+            if not self.frame_queue.full():
+                self.frame_queue.put(frame)
 
     def connect(self):
         if self.capture is not None:
@@ -55,15 +58,15 @@ class StreamReader:
         time.sleep(self.reconnect_delay)
 
     def read(self):
-        with self.lock:
-            frame = self.frame
-            self.frame = None  # Clear the frame after reading
+        try:
+            frame = self.frame_queue.get_nowait()
+        except Empty:
+            frame = None
         return frame
 
     def stop(self):
         self.running = False
-        if self.thread.is_alive():
-            self.thread.join()
+        self.thread.join()
         if self.capture is not None:
             self.capture.release()
 
