@@ -10,7 +10,6 @@ class StreamReader:
         self.reconnect_delay = reconnect_delay
         self.capture = None
         self.frame = None
-        self.lock = threading.Lock()
         self.running = False
 
     def start(self):
@@ -32,8 +31,7 @@ class StreamReader:
                 self.connect()
             success, frame = self.capture.read()
             if success:
-                with self.lock:
-                    self.frame = frame
+                self.frame = frame
             else:
                 print("---------------------------------------------", file=sys.stderr)
                 print("{} ERROR: Failed to read Image...".format(datetime.now()), file=sys.stderr)
@@ -57,9 +55,7 @@ class StreamReader:
         time.sleep(self.reconnect_delay)
 
     def read(self):
-        with self.lock:
-            frame = self.frame
-            self.frame = None  # Clear the frame after reading
+        frame = self.frame
         return frame
 
     def stop(self):
