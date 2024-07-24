@@ -4,6 +4,7 @@ import numpy as np
 from time import sleep
 from datetime import datetime
 import os
+import signal
 import sys
 import configparser
 import tensorflow as tf
@@ -20,7 +21,7 @@ except:
 ############## Reading Config-File #############
 config = configparser.ConfigParser()
 config.read("config.ini")
-#a
+
 stream_url = config["basic"]["stream_url"]
 push_url = config["basic"]["push_url"]
 motion_url = config["basic"]["motion_url"]
@@ -68,7 +69,16 @@ print("---------------------------------------------", file=sys.stderr)
 print("{} INFO: Finished loading Model...".format(datetime.now()), file=sys.stderr)
 print("---------------------------------------------", file=sys.stderr)
 
-##############  Starting the Application #############
+############## Setting up Signal Handler #############
+def signal_handler(sig, frame):
+    print("Killing Process...", file=sys.stderr)
+    stream.stop()
+    motion.stop()
+    sys.exit(0)
+    
+signal.signal(signal.SIGINT, signal_handler)
+
+############## Starting the Application #############
 while True:
     resetDB(db, threshold_last_seen)
     got_motion = motion.result
@@ -91,10 +101,7 @@ while True:
             try:
                 faces = DeepFace.find(img_path=frame, detector_backend=detector, align=alignment, enforce_detection=face_detect_enf, db_path=path_db, distance_metric=metric, model_name=model, silent=True)
             except KeyboardInterrupt:
-                print("Killing Process...")
-                stream.stop()
-                motion.stop()
-                exit()
+                signal_handler(None, None)
             except ValueError as e:
                 if debug:
                     print("---------------------------------------------")
@@ -107,9 +114,7 @@ while True:
                     print("---------------------------------------------")
                     print("{} ERROR: Unknown Error! Exiting...".format(datetime.now()), file=sys.stderr)
                     print("---------------------------------------------")
-                stream.stop()
-                motion.stop()
-                exit()
+                signal_handler(None, None)
             for face in faces:
                 if face.empty == True:
                     if debug:
