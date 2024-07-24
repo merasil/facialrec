@@ -1,8 +1,11 @@
 import requests
 import time
 import threading
-from datetime import datetime
 import sys
+import logging
+from datetime import datetime
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
 class MotionChecker:
     def __init__(self, motion_url):
@@ -16,13 +19,9 @@ class MotionChecker:
             self.running = True
             self.thread = threading.Thread(target=self.update, args=())
             self.thread.start()
-            print("---------------------------------------------", file=sys.stderr)
-            print("{} INFO: MotionChecker started...".format(datetime.now()), file=sys.stderr)
-            print("---------------------------------------------", file=sys.stderr)
+            logging.info("MotionChecker started...")
         else:
-            print("---------------------------------------------", file=sys.stderr)
-            print("{} INFO: MotionChecker is already running...".format(datetime.now()), file=sys.stderr)
-            print("---------------------------------------------", file=sys.stderr)
+            logging.info("MotionChecker is already running...")
 
     def update(self):
         while self.running:
