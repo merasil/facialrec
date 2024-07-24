@@ -6,6 +6,7 @@ from datetime import datetime
 import os
 import signal
 import sys
+import logging
 import configparser
 import tensorflow as tf
 from include.functions import *
@@ -16,8 +17,11 @@ gpus = tf.config.experimental.list_physical_devices('GPU')
 try:
     tf.config.experimental.set_memory_growth(gpus[0], True)
 except:
-    print("ERROR: Could not find any GPU!")
-    
+    logging.info("Couldn't set Memory Growth for GPU or no GPU found. Continuing...")
+
+############## Setting up Logging #############
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+
 ############## Reading Config-File #############
 config = configparser.ConfigParser()
 config.read("config.ini")
@@ -58,17 +62,11 @@ motion = MotionChecker(motion_url)
 motion.start()
 
 sleep(5)
-print("---------------------------------------------", file=sys.stderr)
-print(db, file=sys.stderr)
-print("---------------------------------------------", file=sys.stderr)
-print("---------------------------------------------", file=sys.stderr)
-print("{} INFO: Loading Model...".format(datetime.now()), file=sys.stderr)
-print("---------------------------------------------", file=sys.stderr)
+logging.info("Database: {}".format(db))
+logging.info("Loading Model...")
 DeepFace.build_model(model)
-print("---------------------------------------------", file=sys.stderr)
-print("{} INFO: Finished loading Model...".format(datetime.now()), file=sys.stderr)
-print("---------------------------------------------", file=sys.stderr)
-
+logging.info("Finished loading Model...")
+    
 ############## Setting up Signal Handler #############
 def signal_handler(sig, frame):
     print("Killing Process...", file=sys.stderr)
@@ -84,53 +82,43 @@ while True:
     got_motion = motion.result
     if not got_motion:
         if debug:
-            print("---------------------------------------------", file=sys.stderr)
-            print("{} INFO: No Motion detected. Continuing with next...".format(datetime.now()), file=sys.stderr)
-            print("---------------------------------------------", file=sys.stderr)
+            logging.info("No Motion detected. Continuing with next...")
         sleep(1.0)
         continue
     else:
         frame = stream.read()
         if frame is None:
             if debug:
-                print("---------------------------------------------", file=sys.stderr)
-                print("{} ERROR: Couldnt receive Frame. Continuing with next...".format(datetime.now()), file=sys.stderr)
-                print("---------------------------------------------", file=sys.stderr)
+                logging.error("Couldn't receive Frame. Continuing with next...")
             continue
-        else:
-            try:
-                faces = DeepFace.find(img_path=frame, detector_backend=detector, align=alignment, enforce_detection=face_detect_enf, db_path=path_db, distance_metric=metric, model_name=model, silent=True)
-            except KeyboardInterrupt:
-                signal_handler(None, None)
-            except ValueError as e:
+        
+        try:
+            faces = DeepFace.find(img_path=frame, detector_backend=detector, align=alignment, enforce_detection=face_detect_enf, db_path=path_db, distance_metric=metric, model_name=model, silent=True)
+        except KeyboardInterrupt:
+            signal_handler(None, None)
+        except ValueError as e:
+            if debug:
+                logging.error("No Face found! Continuing...")
+                logging.error(e)
+            continue
+        except Exception as e:
+            if debug:
+                logging.error("Unknown Error! Exiting...")
+                logging.error(e)
+            signal_handler(None, None)
+            
+        for face in faces:
+            if face.empty:
                 if debug:
-                    print("---------------------------------------------")
-                    print("{} ERROR: No Face found! Continuing...".format(datetime.now()), file=sys.stderr)
-                    print(e, file=sys.stderr)
-                    print("---------------------------------------------")
+                    logging.info("No Face recognized! Continuing...")
                 continue
-            except:
-                if debug:
-                    print("---------------------------------------------")
-                    print("{} ERROR: Unknown Error! Exiting...".format(datetime.now()), file=sys.stderr)
-                    print("---------------------------------------------")
-                signal_handler(None, None)
-            for face in faces:
-                if face.empty == True:
+            
+            for identity in db:
+                if identity in face.iloc[0]["identity"]:
                     if debug:
-                        print("---------------------------------------------")
-                        print("{} INFO: No Face recognized! Continuing...".format(datetime.now()), file=sys.stderr)
-                        print("---------------------------------------------")
-                    continue
-                else:
-                    for identity in db:
-                        if identity in face.iloc[0]["identity"]:
-                            if debug:
-                                print("---------------------------------------------")
-                                print("{} INFO: Success! Found Face: {} with Value --> {}".format(datetime.now(), identity, face.iloc[0]["distance"]), file=sys.stderr)
-                                print("---------------------------------------------")
-                            db[identity]["cnt"] += 1
-                            db[identity]["last_seen"] = datetime.now()
-                            if face.iloc[0]["distance"] <= threshold_pretty_sure or db[identity]["cnt"] >= threshold_clearance:
-                                openDoor(identity, push_url)
-                            break
+                        logging.info("Success! Found Face: {} with Value --> {}".format(identity, face.iloc[0]["distance"]))
+                    db[identity]["cnt"] += 1
+                    db[identity]["last_seen"] = datetime.now()
+                    if face.iloc[0]["distance"] <= threshold_pretty_sure or db[identity]["cnt"] >= threshold_clearance:
+                        openDoor(identity, push_url)
+                    break

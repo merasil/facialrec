@@ -2,7 +2,10 @@ import threading
 import cv2
 import sys
 import time
+import logging
 from datetime import datetime
+
+logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
 class StreamReader:
     def __init__(self, rtsp_url, reconnect_delay=5):
@@ -17,13 +20,9 @@ class StreamReader:
             self.running = True
             self.thread = threading.Thread(target=self.capture_frames)
             self.thread.start()
-            print("---------------------------------------------", file=sys.stderr)
-            print("{} INFO: Stream started...".format(datetime.now()), file=sys.stderr)
-            print("---------------------------------------------", file=sys.stderr)
+            logging.info("Stream started...")
         else:
-            print("---------------------------------------------", file=sys.stderr)
-            print("{} INFO: Stream is already running...".format(datetime.now()), file=sys.stderr)
-            print("---------------------------------------------", file=sys.stderr)
+            logging.info("Stream is already running...")
 
     def capture_frames(self):
         while self.running:
@@ -33,9 +32,7 @@ class StreamReader:
             if success:
                 self.frame = frame
             else:
-                print("---------------------------------------------", file=sys.stderr)
-                print("{} ERROR: Failed to read Image...".format(datetime.now()), file=sys.stderr)
-                print("---------------------------------------------", file=sys.stderr)
+                logging.error("Failed to read Image...")
                 self.handle_failure()
 
     def connect(self):
@@ -43,9 +40,7 @@ class StreamReader:
             self.capture.release()
         self.capture = cv2.VideoCapture(self.rtsp_url)
         if not self.capture.isOpened():
-            print("---------------------------------------------", file=sys.stderr)
-            print("{} ERROR: Can not access Camera! Retrying in {} seconds...".format(datetime.now(), self.reconnect_delay), file=sys.stderr)
-            print("---------------------------------------------", file=sys.stderr)
+            logging.error("Can not access Camera! Retrying in {} seconds...".format(self.reconnect_delay))
             time.sleep(self.reconnect_delay)
 
     def handle_failure(self):
