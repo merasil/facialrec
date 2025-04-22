@@ -88,8 +88,6 @@ try:
         resetDB(db, threshold_last_seen)
         frame = stream.read()
 
-        motion.clear_event()
-
         if frame is None:
             if debug:
                 logging.error("Couldn't receive Frame. Continuing with next...")
