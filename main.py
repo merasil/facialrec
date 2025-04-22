@@ -85,13 +85,6 @@ signal.signal(signal.SIGTERM, signal_handler)
 # Main loop with timing measurements
 try:
     while True:
-        start = perf_counter()
-        resetDB(db, threshold_last_seen)
-        dur_reset = perf_counter() - start
-
-        if debug:
-            logging.info(f"resetDB took {dur_reset:.4f}s")
-
         # Wait for motion
         start = perf_counter()
         motion.wait_for_motion()
@@ -99,6 +92,13 @@ try:
 
         if debug:
             logging.info(f"wait_for_motion took {dur_wait:.4f}s")
+
+        start = perf_counter()
+        resetDB(db, threshold_last_seen)
+        dur_reset = perf_counter() - start
+
+        if debug:
+            logging.info(f"resetDB took {dur_reset:.4f}s")
 
         # Read frame
         start = perf_counter()
