@@ -66,14 +66,14 @@ logging.info("Database: {}".format(db))
 logging.info("Loading Model...")
 DeepFace.build_model(model)
 logging.info("Finished loading Model...")
-    
+
 ############## Setting up Signal Handler #############
 def signal_handler(sig, frame):
     print("Killing Process...", file=sys.stderr)
     stream.stop()
     motion.stop()
     sys.exit(0)
-    
+
 signal.signal(signal.SIGINT, signal_handler)
 
 ############## Starting the Application #############
@@ -91,7 +91,7 @@ while True:
             if debug:
                 logging.error("Couldn't receive Frame. Continuing with next...")
             continue
-        
+
         try:
             faces = DeepFace.find(img_path=frame, detector_backend=detector, align=alignment, enforce_detection=face_detect_enf, db_path=path_db, distance_metric=metric, model_name=model, silent=True)
         except KeyboardInterrupt:
@@ -106,13 +106,13 @@ while True:
                 logging.error("Unknown Error! Exiting...")
                 logging.error(e)
             signal_handler(None, None)
-            
+
         for face in faces:
             if face.empty:
                 if debug:
                     logging.info("No Face recognized! Continuing...")
                 continue
-            
+
             for identity in db:
                 if identity in face.iloc[0]["identity"]:
                     if debug:
@@ -121,4 +121,3 @@ while True:
                     db[identity]["last_seen"] = datetime.now()
                     if face.iloc[0]["distance"] <= threshold_pretty_sure or db[identity]["cnt"] >= threshold_clearance:
                         openDoor(identity, push_url)
-                    break

@@ -11,7 +11,7 @@ def str2bool(v):
 def openDoor(identity, push_url):
     logging.info("Open Door for {}".format(identity))
     requests.get(push_url, {"value":"true"})
-    
+
 def resetDB(database, threshold):
     for identity in database:
         if database[identity]["cnt"] != 0:

@@ -1,0 +1,12 @@
+requests
+numpy
+pandas
+gdown
+tqdm
+Pillow
+Flask
+mtcnn
+retina-face
+fire
+gunicorn
+deepface
