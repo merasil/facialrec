@@ -34,11 +34,11 @@ motion_url = config["basic"]["motion_url"]
 debug = str2bool(config["basic"]["debug"])
 
 ############## Setting up Database #############
-path_db = config["database"]["path"]
+db_path = config["database"]["path"]
 db = {}
-for folder in os.scandir(path_db):
+for folder in os.scandir(db_path):
         if folder.is_dir():
-            db[folder.name] = {"path":"{}/{}/{}.jpg".format(path_db,folder.name,folder.name), "last_seen":datetime.now(), "cnt":0}
+            db[folder.name] = {"path":"{}/{}/{}.jpg".format(db_path,folder.name,folder.name), "last_seen":datetime.now(), "cnt":0}
 
 ############## Setting up Face Recognition Model #############
 model = config["face_recognition"]["model"]
@@ -85,16 +85,29 @@ def signal_handler(sig, frame):
 signal.signal(signal.SIGINT, signal_handler)
 
 ############## Function for Processing Frames #############
-def process_frame(frame):
+def process_frame(frame, db_snapshot):
+    import tensorflow as tf
+    from deepface import DeepFace
+    from include.functions import openDoor
+    from datetime import datetime
+    detector = db_snapshot['detector']
+    model_name = db_snapshot['model_name']
+    metric = db_snapshot['metric']
+    alignment = db_snapshot['alignment']
+    face_detect_enf = db_snapshot['face_detect_enf']
+    threshold_pretty_sure = db_snapshot['threshold_pretty_sure']
+    threshold_clearance = db_snapshot['threshold_clearance']
+    push_url = db_snapshot['push_url']
+    db_entries = db_snapshot['db_entries']
     try:
         faces = DeepFace.find(
             img_path=frame,
             detector_backend=detector,
             align=alignment,
             enforce_detection=face_detect_enf,
-            db_path=config["database"]["path"],
+            db_path=db_snapshot['db_path'],
             distance_metric=metric,
-            model_name=model,
+            model_name=model_name,
             silent=True
         )
         for face in faces:
@@ -102,15 +115,27 @@ def process_frame(frame):
                 continue
             identity = face.iloc[0]["identity"]
             dist = face.iloc[0]["distance"]
-            # update database counters and timestamps
-            db_entry = db.get(identity)
-            if db_entry:
-                db_entry["cnt"] += 1
-                db_entry["last_seen"] = datetime.now()
-                if dist <= threshold_pretty_sure or db_entry["cnt"] >= threshold_clearance:
+            if identity in db_entries:
+                db_entries[identity]["cnt"] += 1
+                db_entries[identity]["last_seen"] = datetime.now()
+                if dist <= threshold_pretty_sure or db_entries[identity]["cnt"] >= threshold_clearance:
                     openDoor(identity, push_url)
     except Exception as e:
-        logging.error(f"Error processing frame: {e}")
+        logging.error(f"Error processing frame in worker: {e}")
+
+# Package necessary context for worker processes
+context = {
+    'detector': detector,
+    'model_name': model,
+    'metric': metric,
+    'alignment': alignment,
+    'face_detect_enf': face_detect_enf,
+    'threshold_pretty_sure': threshold_pretty_sure,
+    'threshold_clearance': threshold_clearance,
+    'push_url': push_url,
+    'db_path': db_path,
+    'db_entries': db
+}
 
 ############## Starting the Application #############
 try:
@@ -133,7 +158,7 @@ try:
 
         if debug:
                 logging.info("Starting Frame analyzing Worker...")
-        future = executor.submit(process_frame, frame)
+        future = executor.submit(process_frame, frame, context)
         futures.add(future)
 
         if len(futures) >= MAX_WORKERS:
