@@ -76,7 +76,7 @@ logging.info("Finished loading Model...")
 
 ############## Setting up Signal Handler #############
 def signal_handler(sig, frame):
-    print("Killing Process...", file=sys.stderr)
+    logging.info("Killing Process...")
     stream.stop()
     motion.stop()
     executor.shutdown(wait=False)
@@ -131,13 +131,17 @@ try:
         done, futures = wait(futures, timeout=0, return_when=FIRST_COMPLETED)
         futures -= done
 
+        if debug:
+                logging.info("Starting Frame analyzing Worker...")
         future = executor.submit(process_frame, frame)
         futures.add(future)
 
         if len(futures) >= MAX_WORKERS:
+            if debug:
+                logging.info("No more Workers available! Waiting for one to finish...")
             done, _ = wait(futures, return_when=FIRST_COMPLETED)
             futures -= done
-            
+
 except KeyboardInterrupt:
     signal_handler(None, None)
 except Exception as e:
