@@ -1,14 +1,16 @@
-from deepface import DeepFace
-import cv2 as cv
-import numpy as np
-from time import sleep
-from datetime import datetime
 import os
 import signal
 import sys
 import logging
 import configparser
+
+from datetime import datetime
+from time import sleep
+from concurrent.futures import ThreadPoolExecutor, wait, FIRST_COMPLETED
+
 import tensorflow as tf
+from deepface import DeepFace
+
 from include.functions import *
 from lib.streamreader import StreamReader
 from lib.motionchecker import MotionChecker
@@ -61,6 +63,11 @@ stream.start()
 motion = MotionChecker(motion_url)
 motion.start()
 
+############## Settings for ThreadPoolExecuter ##############
+MAX_WORKERS = os.getenv('MAX_WORKERS', 4)
+executor = ThreadPoolExecutor(max_workers=int(MAX_WORKERS))
+futures = set()
+
 sleep(5)
 logging.info("Database: {}".format(db))
 logging.info("Loading Model...")
@@ -72,52 +79,67 @@ def signal_handler(sig, frame):
     print("Killing Process...", file=sys.stderr)
     stream.stop()
     motion.stop()
+    executor.shutdown(wait=False)
     sys.exit(0)
 
 signal.signal(signal.SIGINT, signal_handler)
 
+############## Function for Processing Frames #############
+def process_frame(frame):
+    try:
+        faces = DeepFace.find(
+            img_path=frame,
+            detector_backend=detector,
+            align=alignment,
+            enforce_detection=face_detect_enf,
+            db_path=config["database"]["path"],
+            distance_metric=metric,
+            model_name=model,
+            silent=True
+        )
+        for face in faces:
+            if face.empty:
+                continue
+            identity = face.iloc[0]["identity"]
+            dist = face.iloc[0]["distance"]
+            # update database counters and timestamps
+            db_entry = db.get(identity)
+            if db_entry:
+                db_entry["cnt"] += 1
+                db_entry["last_seen"] = datetime.now()
+                if dist <= threshold_pretty_sure or db_entry["cnt"] >= threshold_clearance:
+                    openDoor(identity, push_url)
+    except Exception as e:
+        logging.error(f"Error processing frame: {e}")
+
 ############## Starting the Application #############
-while True:
-    resetDB(db, threshold_last_seen)
-    got_motion = motion.result
-    if not got_motion:
-        if debug:
-            logging.info("No Motion detected. Continuing with next...")
-        sleep(1.0)
-        continue
-    else:
+try:
+    while True:
+        resetDB(db, threshold_last_seen)
+        if not motion.result:
+            if debug:
+                logging.info("No Motion detected. Continuing with next...")
+            sleep(1.0)
+            continue
+
         frame = stream.read()
         if frame is None:
             if debug:
                 logging.error("Couldn't receive Frame. Continuing with next...")
             continue
 
-        try:
-            faces = DeepFace.find(img_path=frame, detector_backend=detector, align=alignment, enforce_detection=face_detect_enf, db_path=path_db, distance_metric=metric, model_name=model, silent=True)
-        except KeyboardInterrupt:
-            signal_handler(None, None)
-        except ValueError as e:
-            if debug:
-                logging.error("No Face found! Continuing...")
-                logging.error(e)
-            continue
-        except Exception as e:
-            if debug:
-                logging.error("Unknown Error! Exiting...")
-                logging.error(e)
-            signal_handler(None, None)
+        done, futures = wait(futures, timeout=0, return_when=FIRST_COMPLETED)
+        futures -= done
 
-        for face in faces:
-            if face.empty:
-                if debug:
-                    logging.info("No Face recognized! Continuing...")
-                continue
+        future = executor.submit(process_frame, frame)
+        futures.add(future)
 
-            for identity in db:
-                if identity in face.iloc[0]["identity"]:
-                    if debug:
-                        logging.info("Success! Found Face: {} with Value --> {}".format(identity, face.iloc[0]["distance"]))
-                    db[identity]["cnt"] += 1
-                    db[identity]["last_seen"] = datetime.now()
-                    if face.iloc[0]["distance"] <= threshold_pretty_sure or db[identity]["cnt"] >= threshold_clearance:
-                        openDoor(identity, push_url)
+        if len(futures) >= MAX_WORKERS:
+            done, _ = wait(futures, return_when=FIRST_COMPLETED)
+            futures -= done
+            
+except KeyboardInterrupt:
+    signal_handler(None, None)
+except Exception as e:
+    logging.error(f"Unhandled error in main loop: {e}", exc_info=True)
+    signal_handler(None, None)
