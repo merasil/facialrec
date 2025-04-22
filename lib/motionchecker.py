@@ -25,11 +25,12 @@ class MotionChecker:
     def update(self):
         while self.running:
             self.check_motion()
-        if self.result:
-            self.event.set()
-        else:
-            self.event.clear()
-        time.sleep(1)    
+            if self.result:
+                logging.info("Got Motion...")
+                self.event.set()
+            else:
+                self.event.clear()
+            time.sleep(1)    
 
     def stop(self):
         self.running = False
