@@ -96,7 +96,7 @@ try:
         start = perf_counter()
         motion.wait_for_motion()
         dur_wait = perf_counter() - start
-        motion.clear_event()
+
         if debug:
             logging.info(f"wait_for_motion took {dur_wait:.4f}s")
 
