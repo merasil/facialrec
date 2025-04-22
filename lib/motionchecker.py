@@ -1,9 +1,7 @@
 import requests
 import time
 import threading
-import sys
 import logging
-from datetime import datetime
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
@@ -13,6 +11,7 @@ class MotionChecker:
         self.result = False
         self.running = False
         self.session = requests.Session()
+        self.event = threading.Event()
 
     def start(self):
         if not self.running:
@@ -26,7 +25,16 @@ class MotionChecker:
     def update(self):
         while self.running:
             self.check_motion()
-            time.sleep(1)
+        if self.result:
+            self.event.set()
+        else:
+            self.event.clear()
+        time.sleep(1)    
+
+    def stop(self):
+        self.running = False
+        self.session.close()
+        self.thread.join()
 
     def check_motion(self):
         try:
@@ -42,10 +50,11 @@ class MotionChecker:
         except requests.exceptions.RequestException:
             self.result = False
 
-    def stop(self):
-        self.running = False
-        self.session.close()
-        self.thread.join()
+    def wait_motion(self, timeout=None):
+        return self.event.wait(timeout)
+    
+    def clear_event(self):
+        self.event.clear()
 
     def __del__(self):
         self.stop()
