@@ -1,5 +1,7 @@
 from deepface import DeepFace
-from time import sleep
+import cv2 as cv
+import numpy as np
+from time import sleep, perf_counter
 from datetime import datetime
 import os
 import signal
@@ -80,19 +82,38 @@ def signal_handler(sig, frame):
 signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 
-# Main loop with outer try/except for graceful exit
+# Main loop with timing measurements
 try:
     while True:
-        motion.wait_motion()
-        
+        start = perf_counter()
         resetDB(db, threshold_last_seen)
+        dur_reset = perf_counter() - start
+
+        if debug:
+            logging.info(f"resetDB took {dur_reset:.4f}s")
+
+        # Wait for motion
+        start = perf_counter()
+        motion.wait_for_motion()
+        dur_wait = perf_counter() - start
+        motion.clear_event()
+        if debug:
+            logging.info(f"wait_for_motion took {dur_wait:.4f}s")
+
+        # Read frame
+        start = perf_counter()
         frame = stream.read()
+        dur_read = perf_counter() - start
+        if debug:
+            logging.info(f"stream.read took {dur_read:.4f}s")
 
         if frame is None:
             if debug:
-                logging.error("Couldn't receive Frame. Continuing with next...")
+                logging.error("Couldn't receive Frame after motion. Continuing...")
             continue
-        
+
+        # Face find
+        start = perf_counter()
         try:
             faces = DeepFace.find(
                 img_path=frame,
@@ -114,21 +135,25 @@ try:
                 logging.error("Unknown Error! Exiting...")
                 logging.error(e)
             signal_handler(None, None)
+        dur_find = perf_counter() - start
+        if debug:
+            logging.info(f"DeepFace.find took {dur_find:.4f}s")
 
+        # Process faces
+        start = perf_counter()
         for face in faces:
             if face.empty:
-                if debug:
-                    logging.info("No Face recognized! Continuing...")
                 continue
-
             for identity in db:
                 if identity in face.iloc[0]["identity"]:
-                    if debug:
-                        logging.info(f"Success! Found Face: {identity} with Value --> {face.iloc[0]['distance']}")
                     db[identity]["cnt"] += 1
                     db[identity]["last_seen"] = datetime.now()
                     if face.iloc[0]["distance"] <= threshold_pretty_sure or db[identity]["cnt"] >= threshold_clearance:
                         openDoor(identity, push_url)
+        dur_proc = perf_counter() - start
+        if debug:
+            logging.info(f"face processing took {dur_proc:.4f}s")
+
 except KeyboardInterrupt:
     signal_handler(None, None)
 except Exception as e:
