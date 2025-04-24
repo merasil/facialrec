@@ -69,7 +69,8 @@ motion.start()
 sleep(5)
 logging.info(f"Database: {db}")
 logging.info("Loading Model...")
-DeepFace.build_model(model)
+DeepFace.build_model(model_name=detector, task="face_detector")
+DeepFace.build_model(model_name=model, task="facial_recognition")
 logging.info("Finished loading Model...")
 
 # Signal handler for graceful shutdown

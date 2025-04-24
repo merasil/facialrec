@@ -1,7 +1,6 @@
 services:
-  app:
+  facialrec:
     build: .
-    container_name: facialrec
     volumes:
       - .:/app
     gpus: all
