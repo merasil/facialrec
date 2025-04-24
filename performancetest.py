@@ -30,7 +30,7 @@ def parse_args():
     )
     parser.add_argument(
         "--models", nargs='+',
-        default=["VGG-Face", "Facenet", "Facenet512", "OpenFace", "DeepFace", "DeepID", "ArcFace", "Dlib", "SFace"],
+        default=["VGG-Face", "Facenet", "Facenet512", "OpenFace", "DeepID", "ArcFace", "Dlib", "SFace"],
         help="List of face recognition models to test"
     )
     parser.add_argument(
@@ -84,6 +84,37 @@ def evaluate(db_path, test_dir, video_path, detectors, models, metric, threshold
             total_time = 0.0
             thr = threshold if threshold is not None else DeepFace.verification.find_threshold(model_name, metric)
 
+            # Helper to process a frame or image
+            def process_image(img):
+                nonlocal detected, recognized, total_time
+                start = perf_counter()
+                try:
+                    df = DeepFace.find(
+                        img_path=img,
+                        db_path=db_path,
+                        detector_backend=detector,
+                        model_name=model_name,
+                        distance_metric=metric,
+                        enforce_detection=False,
+                        silent=True
+                    )
+                except Exception:
+                    total_time += perf_counter() - start
+                    return
+                dur = perf_counter() - start
+                total_time += dur
+
+                # DeepFace.find kann DataFrame oder Liste von DataFrames zurückgeben
+                if isinstance(df, list):
+                    try:
+                        df = pd.concat(df, ignore_index=True)
+                    except Exception:
+                        # Liste leer oder nicht konkateniert
+                        return
+
+                detected += len(df)
+                recognized += len(df[df["distance"] <= thr])
+
             if use_video:
                 cap = cv2.VideoCapture(video_path)
                 frame_idx = 0
@@ -94,53 +125,14 @@ def evaluate(db_path, test_dir, video_path, detectors, models, metric, threshold
                     frame_idx += 1
                     if limit and frame_idx > limit:
                         break
-
-                    start = perf_counter()
-                    try:
-                        df = DeepFace.find(
-                            img_path=img,
-                            db_path=db_path,
-                            detector_backend=detector,
-                            model_name=model_name,
-                            distance_metric=metric,
-                            enforce_detection=False,
-                            silent=True
-                        )
-                    except Exception:
-                        total_time += perf_counter() - start
-                        continue
-                    dur = perf_counter() - start
-                    total_time += dur
-
-                    detected += len(df)
-                    recognized += len(df[df["distance"] <= thr])
-
+                    process_image(img)
                 cap.release()
             else:
                 for img_path in img_files:
                     img = cv2.imread(img_path)
                     if img is None:
                         continue
-
-                    start = perf_counter()
-                    try:
-                        df = DeepFace.find(
-                            img_path=img,
-                            db_path=db_path,
-                            detector_backend=detector,
-                            model_name=model_name,
-                            distance_metric=metric,
-                            enforce_detection=False,
-                            silent=True
-                        )
-                    except Exception:
-                        total_time += perf_counter() - start
-                        continue
-                    dur = perf_counter() - start
-                    total_time += dur
-
-                    detected += len(df)
-                    recognized += len(df[df["distance"] <= thr])
+                    process_image(img)
 
             avg_time = (total_time / recognized) if recognized else 0
             results.append({
