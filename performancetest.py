@@ -1,107 +1,131 @@
-#!/usr/bin/env python3
+import os
+import cv2
 import argparse
-import logging
-import sys
-from time import perf_counter, sleep
-from datetime import datetime
-
-import tensorflow as tf
+import numpy as np
+import pandas as pd
+from time import perf_counter
 from deepface import DeepFace
-from lib.streamreader import StreamReader
-from include.functions import resetDB
 
-# --- Logging Setup ---
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s %(levelname)s: %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S"
-)
 
 def parse_args():
-    p = argparse.ArgumentParser(
-        description="Benchmark Face‑Recognition throughput on GPU"
+    parser = argparse.ArgumentParser(
+        description="Evaluate performance of Detector and Recognition model combinations"
     )
-    p.add_argument("--rtsp-url", required=True, help="RTSP‑URL der Kamera")
-    p.add_argument("--db-path", required=True, help="Pfad zur Face‑DB (Ordner mit Subverzeichnissen)")
-    p.add_argument("-n", "--num-faces", type=int, default=50,
-                   help="Anzahl gefundener Gesichter bis zum Stoppen")
-    p.add_argument("--detector", default="retinaface",
-                   help="DeepFace detector (yunet, ssd, retinaface, yolov8, …)")
-    p.add_argument("--model", default="Facenet512",
-                   help="DeepFace model (VGG-Face, Facenet, ArcFace, …)")
-    p.add_argument("--metric", default="euclidean_l2",
-                   help="Distance‑Metric (euclidean, cosine, …)")
-    return p.parse_args()
+    parser.add_argument(
+        "--db_path", required=True,
+        help="Path to the face database directory (each subfolder per identity)"
+    )
+    parser.add_argument(
+        "--test_dir", required=True,
+        help="Path to test images directory"
+    )
+    parser.add_argument(
+        "--detectors", nargs='+', default=["opencv", "ssd", "mtcnn", "dlib", "retinaface", "mediapipe", "yunet"],
+        help="List of detector backends to test"
+    )
+    parser.add_argument(
+        "--models", nargs='+', default=["VGG-Face", "Facenet", "Facenet512", "OpenFace", "DeepFace", "DeepID", "ArcFace", "Dlib", "SFace"],
+        help="List of face recognition models to test"
+    )
+    parser.add_argument(
+        "--metric", default="cosine",
+        help="Distance metric to use for recognition"
+    )
+    parser.add_argument(
+        "--threshold", type=float, default=None,
+        help="Distance threshold for recognizing a face (if None, uses default from DeepFace)"
+    )
+    parser.add_argument(
+        "--limit", type=int, default=None,
+        help="Maximum number of test images to process (random order). Default is all."
+    )
+    return parser.parse_args()
 
-def main():
-    args = parse_args()
 
-    # GPU-Memory Growth aktivieren
-    gpus = tf.config.experimental.list_physical_devices("GPU")
-    if gpus:
-        try:
-            tf.config.experimental.set_memory_growth(gpus[0], True)
-        except Exception:
-            logging.warning("GPU memory growth konnte nicht gesetzt werden")
+def load_db(db_path):
+    db = {}
+    for folder in os.listdir(db_path):
+        full = os.path.join(db_path, folder)
+        if os.path.isdir(full):
+            img = os.path.join(full, f"{folder}.jpg")
+            if os.path.exists(img):
+                db[folder] = img
+    return db
 
-    # Model laden
-    logging.info(f"Building model {args.model} …")
-    DeepFace.build_model(args.model)
-    logging.info("Model ready.")
 
-    # StreamReader starten
-    stream = StreamReader(rtsp_url=args.rtsp_url, reconnect_delay=5, queue_size=1)
-    stream.start()
-    sleep(2)  # kurz warten, bis erster Frame gepuffert
+def evaluate(db_path, test_dir, detectors, models, metric, threshold, limit):
+    img_files = [os.path.join(test_dir, f) for f in os.listdir(test_dir)
+                 if f.lower().endswith((".jpg", ".png", ".jpeg"))]
+    if limit:
+        img_files = img_files[:limit]
 
-    # Variablen für Benchmark
-    total_times = []
-    found_faces = 0
+    # prepare results storage
+    results = []
 
-    try:
-        while found_faces < args.num_faces:
-            frame = stream.read(timeout=5)
-            if frame is None:
-                logging.error("Kein Frame erhalten, versuche erneut …")
-                continue
+    # prebuild recognition models
+    model_cache = {}
+    for model_name in models:
+        print(f"Loading model {model_name}...")
+        model_cache[model_name] = DeepFace.build_model(model_name)
 
-            # Messung starten
-            t0 = perf_counter()
-            faces = DeepFace.find(
-                img_path=frame,
-                detector_backend=args.detector,
-                db_path=args.db_path,
-                distance_metric=args.metric,
-                model_name=args.model,
-                enforce_detection=False,
-                silent=True
-            )
-            dt = perf_counter() - t0
+    for detector in detectors:
+        for model_name, model in model_cache.items():
+            print(f"Testing Detector={detector} Model={model_name}...")
+            detected = 0
+            recognized = 0
+            total_time = 0.0
 
-            # Anzahl der erkannten Gesichter in diesem Frame
-            # faces ist eine Liste von DataFrames
-            count_in_frame = sum(len(df) for df in faces if not df.empty)
-            if count_in_frame > 0:
-                found_faces += count_in_frame
-                total_times.append(dt)
-                logging.info(f"Frame {found_faces}/{args.num_faces} – "
-                             f"{count_in_frame} face(s), find() in {dt:.3f}s")
-            else:
-                logging.debug(f"No faces in {dt:.3f}s")
+            # determine threshold
+            thr = threshold if threshold is not None else DeepFace.verification.find_threshold(model_name, metric)
 
-        # Benchmark auswerten
-        avg_time = sum(total_times) / len(total_times)
-        logging.info("=== Benchmark Ergebnis ===")
-        logging.info(f"Gesichter erkannt: {found_faces}")
-        logging.info(f"Aufrufe mit ≥1 Face: {len(total_times)}")
-        logging.info(f"Durchschnittliche DeepFace.find Dauer: {avg_time:.3f}s")
+            for img_path in img_files:
+                img = cv2.imread(img_path)
+                if img is None:
+                    continue
 
-    except KeyboardInterrupt:
-        logging.info("Benchmark per Strg+C abgebrochen")
-    finally:
-        stream.stop()
-        logging.info("StreamReader gestoppt, Programm beendet")
+                start = perf_counter()
+                try:
+                    df = DeepFace.find(
+                        img_path=img,
+                        db_path=db_path,
+                        detector_backend=detector,
+                        model_name=model_name,
+                        distance_metric=metric,
+                        enforce_detection=False,
+                        silent=True
+                    )
+                except Exception:
+                    dur = perf_counter() - start
+                    total_time += dur
+                    continue
+                dur = perf_counter() - start
+                total_time += dur
+
+                # detection: count unique face entries
+                count_faces = len(df)
+                detected += count_faces
+
+                # recognition: distances below threshold
+                matches = df[df["distance"] <= thr]
+                recognized += len(matches)
+
+            # avg time per recognized face
+            avg_time = (total_time / recognized) if recognized else 0
+            results.append({
+                "detector": detector,
+                "model": model_name,
+                "detected_faces": detected,
+                "recognized_faces": recognized,
+                "avg_time_per_recognition_s": round(avg_time, 4)
+            })
+
+    # print results as table
+    df_res = pd.DataFrame(results)
+    print(df_res.to_string(index=False))
 
 
 if __name__ == "__main__":
-    main()
+    args = parse_args()
+    db = load_db(args.db_path)
+    evaluate(args.db_path, args.test_dir, args.detectors,
+             args.models, args.metric, args.threshold, args.limit)
