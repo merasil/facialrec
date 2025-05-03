@@ -48,6 +48,7 @@ class MotionChecker:
                     self.result = True
                 else:
                     self.result = False
+            time.sleep(1)
         except requests.exceptions.RequestException:
             self.result = False
 

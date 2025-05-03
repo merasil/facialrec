@@ -25,7 +25,7 @@ logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(mes
 
 # Read config file
 config = configparser.ConfigParser()
-config.read("config.ini")
+config.read("./config/config.ini")
 
 stream_url = config["basic"]["stream_url"]
 push_url = config["basic"]["push_url"]
@@ -44,16 +44,14 @@ for folder in os.scandir(path_db):
         }
 
 # Face recognition model setup
-model = config["face_recognition"]["model"]
-if model == "yunet":
-    os.environ["yunet_score_threshold"] = "0.8"
-detector = config["face_recognition"]["detector"]
+recognition_model = config["face_recognition"]["recognition_model"]
+detector_model = config["face_recognition"]["detector_model"]
 metric = config["face_recognition"]["metric"]
 alignment = str2bool(config["face_recognition"]["alignment"])
-face_detect_enf = str2bool(config["face_recognition"]["face_detection_enforce"])
+enforce = str2bool(config["face_recognition"]["enforce"])
 
 # Thresholds setup
-threshold_model = DeepFace.verification.find_threshold(model, metric)
+threshold_model = DeepFace.verification.find_threshold(recognition_model, metric)
 threshold_clearance = int(config["thresholds"]["clearance"])
 threshold_last_seen = int(config["thresholds"]["last_seen"])
 threshold_pretty_sure = threshold_model - (threshold_model * float(config["thresholds"]["pretty_sure"]))
@@ -69,8 +67,8 @@ motion.start()
 sleep(5)
 logging.info(f"Database: {db}")
 logging.info("Loading Model...")
-DeepFace.build_model(model_name=detector, task="face_detector")
-DeepFace.build_model(model_name=model, task="facial_recognition")
+DeepFace.build_model(model_name=detector_model, task="face_detector")
+DeepFace.build_model(model_name=recognition_model, task="facial_recognition")
 logging.info("Finished loading Model...")
 
 # Signal handler for graceful shutdown
@@ -88,7 +86,7 @@ try:
     while True:
         # Wait for motion
         start = perf_counter()
-        motion.wait_for_motion()
+        motion.wait_motion()
         dur_wait = perf_counter() - start
 
         if debug:
@@ -118,12 +116,12 @@ try:
         try:
             faces = DeepFace.find(
                 img_path=frame,
-                detector_backend=detector,
+                detector_backend=detector_model,
                 align=alignment,
-                enforce_detection=face_detect_enf,
+                enforce_detection=enforce,
                 db_path=path_db,
                 distance_metric=metric,
-                model_name=model,
+                model_name=recognition_model,
                 silent=True
             )
         except ValueError as e:

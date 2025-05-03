@@ -2,5 +2,7 @@ services:
   facialrec:
     build: .
     volumes:
-      - .:/app
+      - ./config:/app/config
+      - ./db:/app/db
+      - ./weights:/root/.deepface/weights
     gpus: all
