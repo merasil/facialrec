@@ -2,7 +2,6 @@ import sys
 import requests
 import logging
 from datetime import datetime
-from deepface.commons import distance as dst
 
 logging.basicConfig(level=logging.INFO, format='%(asctime)s %(levelname)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
@@ -19,16 +18,3 @@ def resetDB(database, threshold):
             diff = datetime.now() - database[identity]["last_seen"]
             if diff.seconds >= threshold:
                 database[identity]["cnt"] = 0
-
-def calc_distance(src_emb, test_emb, metric="cosine"):
-    """Calculate distance between two embeddings using the given metric."""
-    if metric == "cosine":
-        return dst.findCosineDistance(src_emb, test_emb)
-    if metric == "euclidean":
-        return dst.findEuclideanDistance(src_emb, test_emb)
-    if metric == "euclidean_l2":
-        src_norm = dst.l2_normalize(src_emb)
-        test_norm = dst.l2_normalize(test_emb)
-        return dst.findEuclideanDistance(src_norm, test_norm)
-    raise ValueError(f"Unsupported metric: {metric}")
-
