@@ -67,8 +67,8 @@ motion.start()
 sleep(5)
 logging.info(f"Database: {db}")
 logging.info("Loading Model...")
-DeepFace.build_model(model_name=detector_model, task="face_detector")
-DeepFace.build_model(model_name=recognition_model, task="facial_recognition")
+ddm = DeepFace.build_model(model_name=detector_model, task="face_detector")
+drm = DeepFace.build_model(model_name=recognition_model, task="facial_recognition")
 logging.info("Finished loading Model...")
 
 # Signal handler for graceful shutdown
@@ -116,12 +116,12 @@ try:
         try:
             faces = DeepFace.find(
                 img_path=frame,
-                detector_backend=detector_model,
+                detector_backend=ddm,
                 align=alignment,
                 enforce_detection=enforce,
                 db_path=path_db,
                 distance_metric=metric,
-                model_name=recognition_model,
+                model_name=drm,
                 silent=True
             )
         except ValueError as e:
