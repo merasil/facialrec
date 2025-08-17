@@ -1,6 +1,5 @@
 from deepface import DeepFace
 import cv2 as cv
-import numpy as np
 from time import sleep, perf_counter
 from datetime import datetime
 import os
@@ -67,9 +66,30 @@ motion.start()
 sleep(5)
 logging.info(f"Database: {db}")
 logging.info("Loading Model...")
-DeepFace.build_model(model_name=detector_model, task="face_detector")
-DeepFace.build_model(model_name=recognition_model, task="facial_recognition")
+detector_backend_model = DeepFace.build_model(model_name=detector_model, task="face_detector")
+recognition_backend_model = DeepFace.build_model(model_name=recognition_model, task="facial_recognition")
 logging.info("Finished loading Model...")
+
+# Precompute database embeddings to speed up recognition
+for identity, data in db.items():
+    img = cv.imread(data["path"])
+    try:
+        reps = DeepFace.represent(
+            img_path=img,
+            model_name=recognition_model,
+            model=recognition_backend_model,
+            detector_backend=detector_model,
+            enforce_detection=False,
+            align=alignment,
+        )
+        if len(reps) > 0:
+            data["embedding"] = reps[0]["embedding"]
+        else:
+            logging.warning(f"No face found for {identity} in database image.")
+            data["embedding"] = None
+    except Exception as e:
+        logging.warning(f"Embedding creation failed for {identity}: {e}")
+        data["embedding"] = None
 
 # Signal handler for graceful shutdown
 def signal_handler(sig, frame):
@@ -111,47 +131,43 @@ try:
                 logging.error("Couldn't receive Frame after motion. Continuing...")
             continue
 
-        # Face find
+        # Compute embeddings for detected faces
         start = perf_counter()
         try:
-            faces = DeepFace.find(
+            reps = DeepFace.represent(
                 img_path=frame,
+                model_name=recognition_model,
+                model=recognition_backend_model,
                 detector_backend=detector_model,
                 align=alignment,
                 enforce_detection=enforce,
-                db_path=path_db,
-                distance_metric=metric,
-                model_name=recognition_model,
-                silent=True
             )
-        except ValueError as e:
+        except Exception as e:
             if debug:
                 logging.error("No Face found! Continuing...")
                 logging.error(e)
             continue
-        except Exception as e:
-            if debug:
-                logging.error("Unknown Error! Exiting...")
-                logging.error(e)
-            signal_handler(None, None)
         dur_find = perf_counter() - start
         if debug:
-            logging.info(f"DeepFace.find took {dur_find:.4f}s")
+            logging.info(f"DeepFace.represent took {dur_find:.4f}s")
 
-        # Process faces
+        # Process embeddings
         start = perf_counter()
-        for face in faces:
-            if face.empty:
-                continue
-            for identity in db:
-                if identity in face.iloc[0]["identity"]:
-                    db[identity]["cnt"] += 1
-                    db[identity]["last_seen"] = datetime.now()
-                    if face.iloc[0]["distance"] <= threshold_pretty_sure or db[identity]["cnt"] >= threshold_clearance:
+        for rep in reps:
+            embedding = rep["embedding"]
+            for identity, data in db.items():
+                db_emb = data.get("embedding")
+                if db_emb is None:
+                    continue
+                dist = calc_distance(db_emb, embedding, metric)
+                if dist <= threshold_model:
+                    data["cnt"] += 1
+                    data["last_seen"] = datetime.now()
+                    if dist <= threshold_pretty_sure or data["cnt"] >= threshold_clearance:
                         openDoor(identity, push_url)
         dur_proc = perf_counter() - start
         if debug:
-            logging.info(f"face processing took {dur_proc:.4f}s")
+            logging.info(f"embedding processing took {dur_proc:.4f}s")
 
 except KeyboardInterrupt:
     signal_handler(None, None)
