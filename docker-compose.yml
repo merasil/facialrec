@@ -7,4 +7,13 @@ services:
       - ./config:/app/config
       - ./db:/app/db
       - ./weights:/root/.deepface/weights
-    gpus: all
+    # Use CDI devices instead of `gpus: all` to avoid legacy hook
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: cdi 
+              device_ids:
+                - "nvidia.com/gpu=all"
+              capabilities: ["gpu"]
+    restart: unless-stopped
