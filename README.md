@@ -121,8 +121,8 @@ Insert the snippet below, save, and exit (this creates a drop-in under
 ```ini
 [Unit]
 # Start Docker only after NVIDIA persistence and udev have settled
-After=network-online.target nvidia-persistenced.service systemd-udev-settle.service
-Wants=network-online.target nvidia-persistenced.service
+After=network-online.target nss-lookup.target docker.socket firewalld.service containerd.service time-set.target nvidia-persistenced.service systemd-udev-settle.service
+Wants=network-online.target containerd.service nvidia-persistenced.service
 
 # Optional but more robust
 [Service]
