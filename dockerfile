@@ -1,4 +1,4 @@
-FROM tensorflow/tensorflow:latest-gpu
+FROM tensorflow/tensorflow:2.19.0-gpu
 
 RUN apt-get update && \
     apt-get purge -y python3-blinker \
@@ -21,8 +21,8 @@ COPY db/        /app/db
 COPY weights/   /root/.deepface/weights
 
 RUN pip3 install --no-cache-dir -r req.txt
-RUN pip3 install --upgrade "tensorflow[and-cuda]"
-RUN pip3 install tf-keras
+RUN pip3 install --upgrade "tensorflow[and-cuda]==2.19.0"
+RUN pip3 install tf-keras==2.19.0
 
 #CMD ["bash"]   #DEBUG
 CMD ["python3", "main.py"]
