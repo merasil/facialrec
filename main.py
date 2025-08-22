@@ -116,12 +116,12 @@ try:
         try:
             faces = DeepFace.find(
                 img_path=frame,
-                detector_backend=ddm,
+                detector_backend=detector_model,
                 align=alignment,
                 enforce_detection=enforce,
                 db_path=path_db,
                 distance_metric=metric,
-                model_name=drm,
+                model_name=recognition_model,
                 silent=True
             )
         except ValueError as e:
