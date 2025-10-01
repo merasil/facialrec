@@ -148,7 +148,7 @@ frames_per_motion = int(config.get("performance", "frames_per_motion", fallback=
 try:
     frame_counter = 0
     while True:
-        # Wait for motion
+        # Wait for motion to start
         start = perf_counter()
         motion.wait_motion()
         dur_wait = perf_counter() - start
@@ -156,74 +156,80 @@ try:
         if debug:
             logging.debug(f"wait_for_motion took {dur_wait:.4f}s")
 
-        start = perf_counter()
-        resetDB(db, threshold_last_seen)
-        dur_reset = perf_counter() - start
+        # Process frames continuously while motion is active
+        while motion.result:
+            start = perf_counter()
+            resetDB(db, threshold_last_seen)
+            dur_reset = perf_counter() - start
 
-        if debug:
-            logging.debug(f"resetDB took {dur_reset:.4f}s")
-
-        # Read multiple frames for better accuracy
-        frames_to_process = []
-        for i in range(frames_per_motion):
-            frame = stream.read()
-            if frame is not None:
-                frames_to_process.append((frame, frame_counter))
-                frame_counter += 1
-            elif debug:
-                logging.debug(f"Couldn't receive frame {i+1}/{frames_per_motion}")
-
-        if not frames_to_process:
             if debug:
-                logging.error("Couldn't receive any frames after motion. Continuing...")
-            continue
+                logging.debug(f"resetDB took {dur_reset:.4f}s")
 
-        # Process frames (parallel or sequential)
-        if use_parallel and len(frames_to_process) > 1:
-            # Submit all frames for parallel processing
-            futures = [executor.submit(process_frame, frame, fid) for frame, fid in frames_to_process]
+            # Read multiple frames for better accuracy
+            frames_to_process = []
+            for i in range(frames_per_motion):
+                frame = stream.read(timeout=1)
+                if frame is not None:
+                    frames_to_process.append((frame, frame_counter))
+                    frame_counter += 1
+                elif debug:
+                    logging.debug(f"Couldn't receive frame {i+1}/{frames_per_motion}")
 
-            # Collect results
-            for future in futures:
-                success, faces, fid = future.result()
-                if not success:
-                    continue
-
-                # Process recognized faces
-                start = perf_counter()
-                for face in faces:
-                    if face.empty:
-                        continue
-                    for identity in db:
-                        if identity in face.iloc[0]["identity"]:
-                            db[identity]["cnt"] += 1
-                            db[identity]["last_seen"] = datetime.now()
-                            if face.iloc[0]["distance"] <= threshold_pretty_sure or db[identity]["cnt"] >= threshold_clearance:
-                                openDoor(identity, push_url)
-                dur_proc = perf_counter() - start
+            if not frames_to_process:
                 if debug:
-                    logging.debug(f"Frame {fid}: face processing took {dur_proc:.4f}s")
-        else:
-            # Sequential processing (original behavior)
-            for frame, fid in frames_to_process:
-                success, faces, fid = process_frame(frame, fid)
-                if not success:
-                    continue
+                    logging.debug("Couldn't receive any frames. Continuing...")
+                continue
 
-                # Process recognized faces
-                start = perf_counter()
-                for face in faces:
-                    if face.empty:
+            # Process frames (parallel or sequential)
+            if use_parallel and len(frames_to_process) > 1:
+                # Submit all frames for parallel processing
+                futures = [executor.submit(process_frame, frame, fid) for frame, fid in frames_to_process]
+
+                # Collect results
+                for future in futures:
+                    success, faces, fid = future.result()
+                    if not success:
                         continue
-                    for identity in db:
-                        if identity in face.iloc[0]["identity"]:
-                            db[identity]["cnt"] += 1
-                            db[identity]["last_seen"] = datetime.now()
-                            if face.iloc[0]["distance"] <= threshold_pretty_sure or db[identity]["cnt"] >= threshold_clearance:
-                                openDoor(identity, push_url)
-                dur_proc = perf_counter() - start
-                if debug:
-                    logging.debug(f"Frame {fid}: face processing took {dur_proc:.4f}s")
+
+                    # Process recognized faces
+                    start = perf_counter()
+                    for face in faces:
+                        if face.empty:
+                            continue
+                        for identity in db:
+                            if identity in face.iloc[0]["identity"]:
+                                db[identity]["cnt"] += 1
+                                db[identity]["last_seen"] = datetime.now()
+                                if face.iloc[0]["distance"] <= threshold_pretty_sure or db[identity]["cnt"] >= threshold_clearance:
+                                    openDoor(identity, push_url)
+                    dur_proc = perf_counter() - start
+                    if debug:
+                        logging.debug(f"Frame {fid}: face processing took {dur_proc:.4f}s")
+            else:
+                # Sequential processing (original behavior)
+                for frame, fid in frames_to_process:
+                    success, faces, fid = process_frame(frame, fid)
+                    if not success:
+                        continue
+
+                    # Process recognized faces
+                    start = perf_counter()
+                    for face in faces:
+                        if face.empty:
+                            continue
+                        for identity in db:
+                            if identity in face.iloc[0]["identity"]:
+                                db[identity]["cnt"] += 1
+                                db[identity]["last_seen"] = datetime.now()
+                                if face.iloc[0]["distance"] <= threshold_pretty_sure or db[identity]["cnt"] >= threshold_clearance:
+                                    openDoor(identity, push_url)
+                    dur_proc = perf_counter() - start
+                    if debug:
+                        logging.debug(f"Frame {fid}: face processing took {dur_proc:.4f}s")
+
+        # Motion ended
+        if debug:
+            logging.debug("Motion ended, going back to idle mode")
 
 except KeyboardInterrupt:
     signal_handler(None, None)
