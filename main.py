@@ -71,17 +71,32 @@ if not db:
     sys.exit(1)
 
 # Face recognition model setup
-recognition_model = config["face_recognition"]["recognition_model"]
-detector_model = config["face_recognition"]["detector_model"]
-metric = config["face_recognition"]["metric"]
-alignment = str2bool(config["face_recognition"]["alignment"])
-enforce = str2bool(config["face_recognition"]["enforce"])
+try:
+    recognition_model = config["face_recognition"]["recognition_model"]
+    detector_model = config["face_recognition"]["detector_model"]
+    metric = config["face_recognition"]["metric"]
+    alignment = str2bool(config["face_recognition"]["alignment"])
+    enforce = str2bool(config["face_recognition"]["enforce"])
+except KeyError as e:
+    logging.error(f"Missing required face_recognition config: {e}")
+    sys.exit(1)
 
 # Thresholds setup
-threshold_model = DeepFace.verification.find_threshold(recognition_model, metric)
-threshold_clearance = int(config["thresholds"]["clearance"])
-threshold_last_seen = int(config["thresholds"]["last_seen"])
-threshold_pretty_sure = threshold_model - (threshold_model * float(config["thresholds"]["pretty_sure"]))
+try:
+    threshold_clearance = int(config["thresholds"]["clearance"])
+    threshold_last_seen = int(config["thresholds"]["last_seen"])
+    pretty_sure_factor = float(config["thresholds"]["pretty_sure"])
+except KeyError as e:
+    logging.error(f"Missing required thresholds config: {e}")
+    sys.exit(1)
+
+try:
+    threshold_model = DeepFace.verification.find_threshold(recognition_model, metric)
+    threshold_pretty_sure = threshold_model - (threshold_model * pretty_sure_factor)
+except Exception as e:
+    logging.error(f"Error calculating threshold for model '{recognition_model}' with metric '{metric}': {e}")
+    logging.error("Valid metrics are usually: cosine, euclidean, euclidean_l2")
+    sys.exit(1)
 
 # Initialize StreamReader and MotionChecker
 stream = StreamReader(stream_url)
