@@ -103,11 +103,13 @@ try:
     use_internal_motion = str2bool(config.get("motion", "use_internal", fallback="False"))
     motion_threshold = int(config.get("motion", "threshold", fallback="25"))
     motion_min_area = float(config.get("motion", "min_area_percent", fallback="0.2"))
+    motion_cooldown = int(config.get("motion", "cooldown_seconds", fallback="5"))
 except (KeyError, ValueError) as e:
     logging.warning(f"Motion config error, using defaults: {e}")
     use_internal_motion = False
     motion_threshold = 25
     motion_min_area = 0.2
+    motion_cooldown = 5
 
 # Initialize StreamReaders
 # Main stream for face recognition
@@ -132,11 +134,12 @@ if use_internal_motion:
         stream_reader=stream_motion,
         use_internal=True,
         threshold=motion_threshold,
-        min_area=motion_min_area
+        min_area=motion_min_area,
+        cooldown_seconds=motion_cooldown
     )
 else:
     logging.info("Using external motion detection (Frigate)")
-    motion = MotionChecker(motion_url)
+    motion = MotionChecker(motion_url, cooldown_seconds=motion_cooldown)
 motion.start()
 
 # Warm-up
