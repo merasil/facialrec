@@ -83,6 +83,11 @@ class MotionChecker:
 
     def _check_motion(self) -> None:
         """Check motion status from the configured URL"""
+        if not self.motion_url or self.motion_url == "None":
+            self.result = False
+            logging.error("External motion detection enabled but motion_url not configured")
+            return
+
         try:
             motion_response = self.session.get(self.motion_url, timeout=5)
             if motion_response.status_code not in range(200, 204):
