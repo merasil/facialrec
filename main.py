@@ -9,7 +9,6 @@ import sys
 import logging
 import configparser
 import tensorflow as tf
-from concurrent.futures import ThreadPoolExecutor
 from include.functions import *
 from lib.streamreader import StreamReader
 from lib.motionchecker import MotionChecker
@@ -34,6 +33,7 @@ config.read(config_path)
 
 try:
     stream_url = config["basic"]["stream_url"]
+    stream_url_lowres = config.get("basic", "stream_url_lowres", fallback="").strip()
     push_url = config["basic"]["push_url"]
     motion_url = config["basic"]["motion_url"]
     debug = str2bool(config["basic"]["debug"])
@@ -98,11 +98,45 @@ except Exception as e:
     logging.error("Valid metrics are usually: cosine, euclidean, euclidean_l2")
     sys.exit(1)
 
-# Initialize StreamReader and MotionChecker
+# Motion detection setup
+try:
+    use_internal_motion = str2bool(config.get("motion", "use_internal", fallback="False"))
+    motion_threshold = int(config.get("motion", "threshold", fallback="25"))
+    motion_min_area = float(config.get("motion", "min_area_percent", fallback="0.2"))
+except (KeyError, ValueError) as e:
+    logging.warning(f"Motion config error, using defaults: {e}")
+    use_internal_motion = False
+    motion_threshold = 25
+    motion_min_area = 0.2
+
+# Initialize StreamReaders
+# Main stream for face recognition
 stream = StreamReader(stream_url)
 stream.start()
 
-motion = MotionChecker(motion_url)
+# Low-res stream for motion detection (if configured and using internal motion)
+stream_motion = None
+if use_internal_motion and stream_url_lowres:
+    logging.info(f"Using separate low-res stream for motion detection: {stream_url_lowres}")
+    stream_motion = StreamReader(stream_url_lowres)
+    stream_motion.start()
+elif use_internal_motion:
+    logging.info("Using main stream for motion detection (no low-res stream configured)")
+    stream_motion = stream
+
+# Initialize MotionChecker (internal or external)
+if use_internal_motion:
+    logging.info("Using internal motion detection")
+    motion = MotionChecker(
+        motion_url=None,
+        stream_reader=stream_motion,
+        use_internal=True,
+        threshold=motion_threshold,
+        min_area=motion_min_area
+    )
+else:
+    logging.info("Using external motion detection (Frigate)")
+    motion = MotionChecker(motion_url)
 motion.start()
 
 # Warm-up
@@ -113,57 +147,22 @@ ddm = DeepFace.build_model(model_name=detector_model, task="face_detector")
 drm = DeepFace.build_model(model_name=recognition_model, task="facial_recognition")
 logging.info("Finished loading Model...")
 
-# Thread pool for parallel frame processing
-max_workers = int(config.get("performance", "max_workers", fallback="2"))
-executor = ThreadPoolExecutor(max_workers=max_workers)
-
 # Signal handler for graceful shutdown
 def signal_handler(sig, frame):
     print("Killing Process...", file=sys.stderr)
-    executor.shutdown(wait=False)
     stream.stop()
+    if stream_motion and stream_motion != stream:
+        stream_motion.stop()
     motion.stop()
     sys.exit(0)
 
 signal.signal(signal.SIGINT, signal_handler)
 signal.signal(signal.SIGTERM, signal_handler)
 
-# Face processing function for parallel execution
-def process_frame(frame, frame_id):
-    """Process a single frame and return results"""
-    start = perf_counter()
-    try:
-        faces = DeepFace.find(
-            img_path=frame,
-            detector_backend=detector_model,
-            align=alignment,
-            enforce_detection=enforce,
-            db_path=path_db,
-            distance_metric=metric,
-            model_name=recognition_model,
-            silent=True
-        )
-        dur = perf_counter() - start
-        if debug:
-            logging.debug(f"Frame {frame_id}: DeepFace.find took {dur:.4f}s")
-        return (True, faces, frame_id)
-    except ValueError as e:
-        if debug:
-            logging.debug(f"Frame {frame_id}: No face found")
-        return (False, None, frame_id)
-    except Exception as e:
-        logging.error(f"Frame {frame_id}: Error during face recognition: {e}")
-        return (False, None, frame_id)
-
-# Performance mode configuration
-use_parallel = str2bool(config.get("performance", "parallel_processing", fallback="False"))
-frames_per_motion = int(config.get("performance", "frames_per_motion", fallback="1"))
-
 # Main loop with timing measurements
 try:
-    frame_counter = 0
     while True:
-        # Wait for motion to start
+        # Wait for motion
         start = perf_counter()
         motion.wait_motion()
         dur_wait = perf_counter() - start
@@ -171,80 +170,64 @@ try:
         if debug:
             logging.debug(f"wait_for_motion took {dur_wait:.4f}s")
 
-        # Process frames continuously while motion is active
-        while motion.result:
-            start = perf_counter()
-            resetDB(db, threshold_last_seen)
-            dur_reset = perf_counter() - start
+        start = perf_counter()
+        resetDB(db, threshold_last_seen)
+        dur_reset = perf_counter() - start
 
-            if debug:
-                logging.debug(f"resetDB took {dur_reset:.4f}s")
-
-            # Read multiple frames for better accuracy
-            frames_to_process = []
-            for i in range(frames_per_motion):
-                frame = stream.read(timeout=1)
-                if frame is not None:
-                    frames_to_process.append((frame, frame_counter))
-                    frame_counter += 1
-                elif debug:
-                    logging.debug(f"Couldn't receive frame {i+1}/{frames_per_motion}")
-
-            if not frames_to_process:
-                if debug:
-                    logging.debug("Couldn't receive any frames. Continuing...")
-                continue
-
-            # Process frames (parallel or sequential)
-            if use_parallel and len(frames_to_process) > 1:
-                # Submit all frames for parallel processing
-                futures = [executor.submit(process_frame, frame, fid) for frame, fid in frames_to_process]
-
-                # Collect results
-                for future in futures:
-                    success, faces, fid = future.result()
-                    if not success:
-                        continue
-
-                    # Process recognized faces
-                    start = perf_counter()
-                    for face in faces:
-                        if face.empty:
-                            continue
-                        for identity in db:
-                            if identity in face.iloc[0]["identity"]:
-                                db[identity]["cnt"] += 1
-                                db[identity]["last_seen"] = datetime.now()
-                                if face.iloc[0]["distance"] <= threshold_pretty_sure or db[identity]["cnt"] >= threshold_clearance:
-                                    openDoor(identity, push_url)
-                    dur_proc = perf_counter() - start
-                    if debug:
-                        logging.debug(f"Frame {fid}: face processing took {dur_proc:.4f}s")
-            else:
-                # Sequential processing (original behavior)
-                for frame, fid in frames_to_process:
-                    success, faces, fid = process_frame(frame, fid)
-                    if not success:
-                        continue
-
-                    # Process recognized faces
-                    start = perf_counter()
-                    for face in faces:
-                        if face.empty:
-                            continue
-                        for identity in db:
-                            if identity in face.iloc[0]["identity"]:
-                                db[identity]["cnt"] += 1
-                                db[identity]["last_seen"] = datetime.now()
-                                if face.iloc[0]["distance"] <= threshold_pretty_sure or db[identity]["cnt"] >= threshold_clearance:
-                                    openDoor(identity, push_url)
-                    dur_proc = perf_counter() - start
-                    if debug:
-                        logging.debug(f"Frame {fid}: face processing took {dur_proc:.4f}s")
-
-        # Motion ended
         if debug:
-            logging.debug("Motion ended, going back to idle mode")
+            logging.debug(f"resetDB took {dur_reset:.4f}s")
+
+        # Read frame
+        start = perf_counter()
+        frame = stream.read()
+        dur_read = perf_counter() - start
+        if debug:
+            logging.debug(f"stream.read took {dur_read:.4f}s")
+
+        if frame is None:
+            if debug:
+                logging.debug("Couldn't receive Frame after motion. Continuing...")
+            continue
+
+        # Face find
+        start = perf_counter()
+        try:
+            faces = DeepFace.find(
+                img_path=frame,
+                detector_backend=detector_model,
+                align=alignment,
+                enforce_detection=enforce,
+                db_path=path_db,
+                distance_metric=metric,
+                model_name=recognition_model,
+                silent=True
+            )
+        except ValueError as e:
+            if debug:
+                logging.debug("No Face found! Continuing...")
+                logging.debug(e)
+            continue
+        except Exception as e:
+            logging.error(f"Error during face recognition: {e}")
+            continue
+        dur_find = perf_counter() - start
+        if debug:
+            logging.debug(f"DeepFace.find took {dur_find:.4f}s")
+
+        # Process faces
+        start = perf_counter()
+        for face in faces:
+            if face.empty:
+                continue
+            for identity in db:
+                if identity in face.iloc[0]["identity"]:
+                    db[identity]["cnt"] += 1
+                    db[identity]["last_seen"] = datetime.now()
+                    if face.iloc[0]["distance"] <= threshold_pretty_sure or db[identity]["cnt"] >= threshold_clearance:
+                        openDoor(identity, push_url)
+        dur_proc = perf_counter() - start
+        if debug:
+            logging.debug(f"face processing took {dur_proc:.4f}s")
 
 except KeyboardInterrupt:
     signal_handler(None, None)
