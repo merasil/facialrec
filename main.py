@@ -230,7 +230,7 @@ try:
 
         # Process faces
         start = perf_counter()
-        unknown_count = 0
+        unknown_count = face_count
         for face in faces:
             if face.empty:
                 continue
@@ -238,13 +238,12 @@ try:
                 if identity in face.iloc[0]["identity"]:
                     db[identity]["cnt"] += 1
                     db[identity]["last_seen"] = datetime.now()
+                    unknown_count -= 1
                     if verbose >= 2:
                         distance = face.iloc[0]["distance"]
                         logging.info(f"Recognized: {identity} (distance: {distance:.4f}, count: {db[identity]['cnt']})")
                     if face.iloc[0]["distance"] <= threshold_pretty_sure or db[identity]["cnt"] >= threshold_clearance:
                         openDoor(identity, push_url, verbose)
-                else:
-                    unknown_count += 1
 
         # Log unknown faces count if any
         if unknown_count > 0 and verbose >= 2:
