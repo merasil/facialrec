@@ -235,19 +235,17 @@ try:
             if face.empty:
                 unknown_count += 1
                 continue
-            face_recognized = False
             for identity in db:
                 if identity in face.iloc[0]["identity"]:
                     db[identity]["cnt"] += 1
                     db[identity]["last_seen"] = datetime.now()
-                    face_recognized = True
                     if verbose >= 2:
                         distance = face.iloc[0]["distance"]
                         logging.info(f"Recognized: {identity} (distance: {distance:.4f}, count: {db[identity]['cnt']})")
                     if face.iloc[0]["distance"] <= threshold_pretty_sure or db[identity]["cnt"] >= threshold_clearance:
                         openDoor(identity, push_url, verbose)
-            if not face_recognized:
-                unknown_count += 1
+                else:
+                    unknown_count += 1
 
         # Log unknown faces count if any
         if unknown_count > 0 and verbose >= 2:
