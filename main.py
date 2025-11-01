@@ -233,7 +233,6 @@ try:
         unknown_count = 0
         for face in faces:
             if face.empty:
-                unknown_count += 1
                 continue
             for identity in db:
                 if identity in face.iloc[0]["identity"]:
