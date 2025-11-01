@@ -16,7 +16,7 @@ class MotionChecker:
 
     def __init__(self, motion_url: Optional[str], stream_reader=None,
                  use_internal: bool = False, threshold: int = 25, min_area: float = 0.2,
-                 cooldown_seconds: int = 5):
+                 cooldown_seconds: int = 5, verbose: int = 1):
         """
         Initialize the motion checker
 
@@ -27,6 +27,7 @@ class MotionChecker:
             threshold: Pixel difference threshold for motion detection (0-255)
             min_area: Minimum area as percentage of frame (0.0-100.0) to consider as motion
             cooldown_seconds: Seconds to keep motion active after last detection
+            verbose: Logging verbosity level (0-4)
         """
         self.motion_url = motion_url
         self.stream_reader = stream_reader
@@ -34,6 +35,7 @@ class MotionChecker:
         self.threshold = threshold
         self.min_area = min_area
         self.cooldown_seconds = cooldown_seconds
+        self.verbose = verbose
         self.result = False
         self.running = False
         self.session = requests.Session() if not use_internal else None
@@ -41,6 +43,7 @@ class MotionChecker:
         self.thread = None
         self.prev_frame = None
         self.last_motion_time = None
+        self.prev_result = False  # Track previous motion state for transitions
 
     def start(self) -> None:
         """Start the motion checker thread"""
@@ -63,7 +66,6 @@ class MotionChecker:
             # Update last motion time if motion detected
             if motion_detected:
                 self.last_motion_time = time.time()
-                logging.debug("Motion detected")
 
             # Keep motion active if within cooldown period
             if self.last_motion_time:
@@ -77,6 +79,16 @@ class MotionChecker:
             else:
                 self.result = False
                 self.event.clear()
+
+            # Detect state transitions
+            if self.result != self.prev_result:
+                if self.result:
+                    if self.verbose >= 3:
+                        logging.info("Motion detected - starting face recognition")
+                else:
+                    if self.verbose >= 3:
+                        logging.info("Motion stopped - waiting for next motion")
+                self.prev_result = self.result
 
             time.sleep(0.1 if self.use_internal else 1)
 

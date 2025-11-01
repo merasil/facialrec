@@ -8,19 +8,21 @@ def str2bool(v: Any) -> bool:
     """Convert string or other value to boolean"""
     return str(v).lower() in ("yes", "y", "true", "t", "1")
 
-def openDoor(identity: str, push_url: str) -> bool:
+def openDoor(identity: str, push_url: str, verbose: int = 1) -> bool:
     """
     Trigger door opening mechanism via HTTP request
 
     Args:
         identity: Name of the person to open the door for
         push_url: URL to trigger the door mechanism
+        verbose: Logging verbosity level (0-4)
 
     Returns:
         True if request was successful, False otherwise
     """
     try:
-        logging.info(f"Opened for {identity}")
+        if verbose >= 1:
+            logging.info(f"Opened for {identity}")
         response = requests.get(push_url, params={"value": "true"}, timeout=5)
         response.raise_for_status()
         return True

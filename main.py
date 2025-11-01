@@ -20,7 +20,7 @@ try:
 except Exception:
     logging.info("Couldn't set Memory Growth for GPU or no GPU found. Continuing...")
 
-# Read config file first to get debug setting
+# Read config file first to get verbose setting
 config = configparser.ConfigParser()
 config_path = "./config/config.ini"
 
@@ -36,13 +36,19 @@ try:
     stream_url_lowres = config.get("basic", "stream_url_lowres", fallback="").strip()
     push_url = config["basic"]["push_url"]
     motion_url = config["basic"]["motion_url"]
-    debug = str2bool(config["basic"]["debug"])
+    verbose = int(config.get("basic", "verbose", fallback="1"))
+    if verbose < 0 or verbose > 4:
+        print(f"ERROR: verbose level must be 0-4, got {verbose}", file=sys.stderr)
+        sys.exit(1)
 except KeyError as e:
     print(f"ERROR: Missing required config key: {e}", file=sys.stderr)
     sys.exit(1)
+except ValueError as e:
+    print(f"ERROR: verbose level must be an integer: {e}", file=sys.stderr)
+    sys.exit(1)
 
-# Logging setup based on debug setting
-log_level = logging.DEBUG if debug else logging.INFO
+# Logging setup based on verbose level (level 4 enables DEBUG logging)
+log_level = logging.DEBUG if verbose >= 4 else logging.INFO
 logging.basicConfig(level=log_level, format='%(asctime)s %(levelname)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
 # Database setup
@@ -135,11 +141,12 @@ if use_internal_motion:
         use_internal=True,
         threshold=motion_threshold,
         min_area=motion_min_area,
-        cooldown_seconds=motion_cooldown
+        cooldown_seconds=motion_cooldown,
+        verbose=verbose
     )
 else:
     logging.info("Using external motion detection (Frigate)")
-    motion = MotionChecker(motion_url, cooldown_seconds=motion_cooldown)
+    motion = MotionChecker(motion_url, cooldown_seconds=motion_cooldown, verbose=verbose)
 motion.start()
 
 # Warm-up
@@ -170,25 +177,25 @@ try:
         motion.wait_motion()
         dur_wait = perf_counter() - start
 
-        if debug:
+        if verbose >= 4:
             logging.debug(f"wait_for_motion took {dur_wait:.4f}s")
 
         start = perf_counter()
         resetDB(db, threshold_last_seen)
         dur_reset = perf_counter() - start
 
-        if debug:
+        if verbose >= 4:
             logging.debug(f"resetDB took {dur_reset:.4f}s")
 
         # Read frame
         start = perf_counter()
         frame = stream.read()
         dur_read = perf_counter() - start
-        if debug:
+        if verbose >= 4:
             logging.debug(f"stream.read took {dur_read:.4f}s")
 
         if frame is None:
-            if debug:
+            if verbose >= 4:
                 logging.debug("Couldn't receive Frame after motion. Continuing...")
             continue
 
@@ -206,7 +213,7 @@ try:
                 silent=True
             )
         except ValueError as e:
-            if debug:
+            if verbose >= 4:
                 logging.debug("No Face found! Continuing...")
                 logging.debug(e)
             continue
@@ -214,23 +221,42 @@ try:
             logging.error(f"Error during face recognition: {e}")
             continue
         dur_find = perf_counter() - start
-        if debug:
+        if verbose >= 4:
             logging.debug(f"DeepFace.find took {dur_find:.4f}s")
+
+        if verbose >= 2:
+            face_count = sum(1 for face in faces if not face.empty)
+            logging.info(f"Detected {face_count} face(s)")
 
         # Process faces
         start = perf_counter()
+        unknown_count = 0
         for face in faces:
             if face.empty:
+                unknown_count += 1
                 continue
+            face_recognized = False
             for identity in db:
                 if identity in face.iloc[0]["identity"]:
                     db[identity]["cnt"] += 1
                     db[identity]["last_seen"] = datetime.now()
+                    face_recognized = True
+                    if verbose >= 2:
+                        distance = face.iloc[0]["distance"]
+                        logging.info(f"Recognized: {identity} (distance: {distance:.4f}, count: {db[identity]['cnt']})")
                     if face.iloc[0]["distance"] <= threshold_pretty_sure or db[identity]["cnt"] >= threshold_clearance:
-                        openDoor(identity, push_url)
+                        openDoor(identity, push_url, verbose)
+            if not face_recognized:
+                unknown_count += 1
+
+        # Log unknown faces count if any
+        if unknown_count > 0 and verbose >= 2:
+            logging.info(f"Recognized: {unknown_count} unknown face{'s' if unknown_count != 1 else ''}")
+
         dur_proc = perf_counter() - start
-        if debug:
-            logging.debug(f"face processing took {dur_proc:.4f}s")
+
+        if verbose >= 4:
+            logging.debug(f"Face processing took {dur_proc:.4f}s")
 
 except KeyboardInterrupt:
     signal_handler(None, None)
