@@ -16,7 +16,8 @@ class MotionChecker:
 
     def __init__(self, motion_url: Optional[str], stream_reader=None,
                  use_internal: bool = False, threshold: int = 25, min_area: float = 0.2,
-                 cooldown_seconds: int = 5, verbose: int = 1, resize: bool = False):
+                 cooldown_seconds: int = 5, verbose: int = 1, resize: bool = False,
+                 background_alpha: float = 0.05):
         """
         Initialize the motion checker
 
@@ -29,6 +30,8 @@ class MotionChecker:
             cooldown_seconds: Seconds to keep motion active after last detection
             verbose: Logging verbosity level (0-4)
             resize: Downscale motion frames to 320x240 for faster processing
+            background_alpha: Weight for running background reference (0.0-1.0).
+                Lower = slower adaptation, better at catching slow motion.
         """
         self.motion_url = motion_url
         self.stream_reader = stream_reader
@@ -38,6 +41,7 @@ class MotionChecker:
         self.cooldown_seconds = cooldown_seconds
         self.verbose = verbose
         self.resize = resize
+        self.background_alpha = background_alpha
         self.result = False
         self.running = False
         self.session = requests.Session() if not use_internal else None
@@ -161,13 +165,14 @@ class MotionChecker:
                 gray = cv2.resize(gray, (320, 240), interpolation=cv2.INTER_AREA)
             gray = cv2.GaussianBlur(gray, (21, 21), 0)
 
-            # Initialize previous frame on first run
+            # Initialize running background reference on first run
             if self.prev_frame is None:
-                self.prev_frame = gray
+                self.prev_frame = gray.astype("float")
                 return False
 
-            # Calculate absolute difference between frames
-            frame_delta = cv2.absdiff(self.prev_frame, gray)
+            # Compare against slowly adapting background (catches slow motion)
+            ref = cv2.convertScaleAbs(self.prev_frame)
+            frame_delta = cv2.absdiff(ref, gray)
             thresh = cv2.threshold(frame_delta, self.threshold, 255, cv2.THRESH_BINARY)[1]
 
             # Dilate to fill gaps
@@ -188,7 +193,8 @@ class MotionChecker:
                     motion_detected = True
                     break
 
-            self.prev_frame = gray
+            # Update background reference with weighted average
+            cv2.accumulateWeighted(gray, self.prev_frame, self.background_alpha)
             return motion_detected
 
         except Exception as e:

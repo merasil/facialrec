@@ -40,11 +40,14 @@ log_level = logging.DEBUG if verbose >= 4 else logging.INFO
 logging.basicConfig(level=log_level, format='%(asctime)s %(levelname)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
 # GPU memory growth
-try:
-    gpus = tf.config.experimental.list_physical_devices('GPU')
-    tf.config.experimental.set_memory_growth(gpus[0], True)
-except Exception:
-    logging.info("Couldn't set Memory Growth for GPU or no GPU found. Continuing...")
+gpus = tf.config.experimental.list_physical_devices('GPU')
+if gpus:
+    try:
+        tf.config.experimental.set_memory_growth(gpus[0], True)
+    except RuntimeError as e:
+        logging.warning(f"Couldn't set memory growth: {e}")
+else:
+    logging.info("No GPU found, running on CPU")
 
 # Database setup
 path_db = config["database"]["path"]
@@ -126,27 +129,30 @@ try:
     motion_threshold = int(config.get("motion", "threshold", fallback="25"))
     motion_min_area = float(config.get("motion", "min_area_percent", fallback="0.2"))
     motion_cooldown = int(config.get("motion", "cooldown_seconds", fallback="5"))
+    motion_bg_alpha = float(config.get("motion", "background_alpha", fallback="0.05"))
 except (KeyError, ValueError) as e:
     logging.warning(f"Motion config error, using defaults: {e}")
     use_internal_motion = False
     motion_threshold = 25
     motion_min_area = 0.2
     motion_cooldown = 5
+    motion_bg_alpha = 0.05
 
 # Initialize StreamReaders
 # Main stream for face recognition
 stream = StreamReader(stream_url)
 stream.start()
 
-# Low-res stream for motion detection (if configured and using internal motion)
+# Dedicated stream for motion detection (separate from main stream to avoid queue contention)
 stream_motion = None
-if use_internal_motion and stream_url_lowres:
-    logging.info(f"Using separate low-res stream for motion detection: {stream_url_lowres}")
-    stream_motion = StreamReader(stream_url_lowres)
+if use_internal_motion:
+    motion_stream_url = stream_url_lowres if stream_url_lowres else stream_url
+    if stream_url_lowres:
+        logging.info(f"Using separate low-res stream for motion detection: {motion_stream_url}")
+    else:
+        logging.info("Using second connection to main stream for motion detection (no low-res stream configured)")
+    stream_motion = StreamReader(motion_stream_url)
     stream_motion.start()
-elif use_internal_motion:
-    logging.info("Using main stream for motion detection (no low-res stream configured)")
-    stream_motion = stream
 
 # Initialize MotionChecker (internal or external)
 if use_internal_motion:
@@ -159,7 +165,8 @@ if use_internal_motion:
         min_area=motion_min_area,
         cooldown_seconds=motion_cooldown,
         verbose=verbose,
-        resize=stream_resize
+        resize=stream_resize,
+        background_alpha=motion_bg_alpha
     )
 else:
     logging.info("Using external motion detection (Frigate)")
@@ -241,13 +248,14 @@ try:
         if verbose >= 4:
             logging.debug(f"DeepFace.find took {dur_find:.4f}s")
 
-        face_count = sum(1 for face in faces if not face.empty)
+        total_faces = len(faces)
+        recognized_count = sum(1 for face in faces if not face.empty)
+        unknown_count = total_faces - recognized_count
         if verbose >= 2:
-            logging.info(f"Detected {face_count} face(s)")
+            logging.info(f"Detected {total_faces} face(s)")
 
         # Process faces
         start = perf_counter()
-        unknown_count = face_count
         for face in faces:
             if face.empty:
                 continue
@@ -255,7 +263,6 @@ try:
             if identity in db:
                 db[identity]["cnt"] += 1
                 db[identity]["last_seen"] = datetime.now()
-                unknown_count -= 1
                 if verbose >= 2:
                     distance = face.iloc[0]["distance"]
                     logging.info(f"Recognized: {identity} (distance: {distance:.4f}, count: {db[identity]['cnt']})")
@@ -267,7 +274,7 @@ try:
 
         # Log unknown faces count if any
         if unknown_count > 0 and verbose >= 2:
-            logging.info(f"Recognized: {unknown_count} unknown face{'s' if unknown_count != 1 else ''}")
+            logging.info(f"Detected {unknown_count} unknown face{'s' if unknown_count != 1 else ''}")
 
         dur_proc = perf_counter() - start
 
