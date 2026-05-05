@@ -16,7 +16,7 @@ class MotionChecker:
 
     def __init__(self, motion_url: Optional[str], stream_reader=None,
                  use_internal: bool = False, threshold: int = 25, min_area: float = 0.2,
-                 cooldown_seconds: int = 5, verbose: int = 1):
+                 cooldown_seconds: int = 5, verbose: int = 1, resize: bool = False):
         """
         Initialize the motion checker
 
@@ -28,6 +28,7 @@ class MotionChecker:
             min_area: Minimum area as percentage of frame (0.0-100.0) to consider as motion
             cooldown_seconds: Seconds to keep motion active after last detection
             verbose: Logging verbosity level (0-4)
+            resize: Downscale motion frames to 320x240 for faster processing
         """
         self.motion_url = motion_url
         self.stream_reader = stream_reader
@@ -36,6 +37,7 @@ class MotionChecker:
         self.min_area = min_area
         self.cooldown_seconds = cooldown_seconds
         self.verbose = verbose
+        self.resize = resize
         self.result = False
         self.running = False
         self.session = requests.Session() if not use_internal else None
@@ -155,6 +157,8 @@ class MotionChecker:
 
             # Convert to grayscale and blur to reduce noise
             gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            if self.resize:
+                gray = cv2.resize(gray, (320, 240), interpolation=cv2.INTER_AREA)
             gray = cv2.GaussianBlur(gray, (21, 21), 0)
 
             # Initialize previous frame on first run

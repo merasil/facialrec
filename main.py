@@ -1,10 +1,7 @@
 from deepface import DeepFace
-import cv2 as cv
-import numpy as np
 from time import sleep, perf_counter
 from datetime import datetime
 import os
-import glob as globmod
 import signal
 import sys
 import logging
@@ -14,13 +11,6 @@ import tensorflow as tf
 from include.functions import *
 from lib.streamreader import StreamReader
 from lib.motionchecker import MotionChecker
-
-# GPU memory growth
-try:
-    gpus = tf.config.experimental.list_physical_devices('GPU')
-    tf.config.experimental.set_memory_growth(gpus[0], True)
-except Exception:
-    logging.info("Couldn't set Memory Growth for GPU or no GPU found. Continuing...")
 
 # Read config file first to get verbose setting
 config = configparser.ConfigParser()
@@ -34,10 +24,6 @@ if not os.path.exists(config_path):
 config.read(config_path)
 
 try:
-    stream_url = config["basic"]["stream_url"]
-    stream_url_lowres = config.get("basic", "stream_url_lowres", fallback="").strip()
-    push_url = config["basic"]["push_url"]
-    motion_url = config["basic"]["motion_url"]
     verbose = int(config.get("basic", "verbose", fallback="1"))
     if verbose < 0 or verbose > 4:
         print(f"ERROR: verbose level must be 0-4, got {verbose}", file=sys.stderr)
@@ -53,6 +39,13 @@ except ValueError as e:
 log_level = logging.DEBUG if verbose >= 4 else logging.INFO
 logging.basicConfig(level=log_level, format='%(asctime)s %(levelname)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
 
+# GPU memory growth
+try:
+    gpus = tf.config.experimental.list_physical_devices('GPU')
+    tf.config.experimental.set_memory_growth(gpus[0], True)
+except Exception:
+    logging.info("Couldn't set Memory Growth for GPU or no GPU found. Continuing...")
+
 # Database setup
 path_db = config["database"]["path"]
 
@@ -61,14 +54,16 @@ if not os.path.exists(path_db):
     sys.exit(1)
 
 db = {}
-supported_extensions = ("*.jpg", "*.jpeg", "*.png")
-for folder in os.scandir(path_db):
-    if folder.is_dir():
+supported_extensions = (".jpg", ".jpeg", ".png")
+with os.scandir(path_db) as entries:
+    for folder in entries:
+        if not folder.is_dir():
+            continue
         img_path = None
         for ext in supported_extensions:
-            matches = globmod.glob(os.path.join(path_db, folder.name, folder.name + ext[1:]))
-            if matches:
-                img_path = matches[0]
+            candidate = os.path.join(path_db, folder.name, folder.name + ext)
+            if os.path.exists(candidate):
+                img_path = candidate
                 break
         if img_path:
             db[folder.name] = {
@@ -83,6 +78,17 @@ for folder in os.scandir(path_db):
 
 if not db:
     logging.error("No valid identities found in database!")
+    sys.exit(1)
+
+# Basic setup
+try:
+    stream_url = config["basic"]["stream_url"]
+    stream_url_lowres = config.get("basic", "stream_url_lowres", fallback="").strip()
+    push_url = config["basic"]["push_url"]
+    motion_url = config["basic"]["motion_url"]
+    stream_resize = str2bool(config.get("basic", "stream_resize", fallback="False"))
+except KeyError as e:
+    logging.error(f"Missing required basic config: {e}")
     sys.exit(1)
 
 # Face recognition model setup
@@ -152,7 +158,8 @@ if use_internal_motion:
         threshold=motion_threshold,
         min_area=motion_min_area,
         cooldown_seconds=motion_cooldown,
-        verbose=verbose
+        verbose=verbose,
+        resize=stream_resize
     )
 else:
     logging.info("Using external motion detection (Frigate)")
