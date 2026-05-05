@@ -4,9 +4,11 @@ import numpy as np
 from time import sleep, perf_counter
 from datetime import datetime
 import os
+import glob as globmod
 import signal
 import sys
 import logging
+import threading
 import configparser
 import tensorflow as tf
 from include.functions import *
@@ -59,18 +61,25 @@ if not os.path.exists(path_db):
     sys.exit(1)
 
 db = {}
+supported_extensions = ("*.jpg", "*.jpeg", "*.png")
 for folder in os.scandir(path_db):
     if folder.is_dir():
-        img_path = f"{path_db}/{folder.name}/{folder.name}.jpg"
-        if os.path.exists(img_path):
+        img_path = None
+        for ext in supported_extensions:
+            matches = globmod.glob(os.path.join(path_db, folder.name, folder.name + ext[1:]))
+            if matches:
+                img_path = matches[0]
+                break
+        if img_path:
             db[folder.name] = {
                 "path": img_path,
                 "last_seen": datetime.now(),
+                "last_opened": None,
                 "cnt": 0
             }
             logging.debug(f"Loaded identity: {folder.name}")
         else:
-            logging.warning(f"Image not found for {folder.name}: {img_path}")
+            logging.warning(f"No image found for {folder.name} in {path_db}/{folder.name}/ (supported: {', '.join(supported_extensions)})")
 
 if not db:
     logging.error("No valid identities found in database!")
@@ -92,6 +101,7 @@ try:
     threshold_clearance = int(config["thresholds"]["clearance"])
     threshold_last_seen = int(config["thresholds"]["last_seen"])
     pretty_sure_factor = float(config["thresholds"]["pretty_sure"])
+    open_door_cooldown = int(config.get("thresholds", "open_door_cooldown", fallback="30"))
 except KeyError as e:
     logging.error(f"Missing required thresholds config: {e}")
     sys.exit(1)
@@ -189,7 +199,7 @@ try:
 
         # Read frame
         start = perf_counter()
-        frame = stream.read()
+        frame = stream.read(timeout=5)
         dur_read = perf_counter() - start
         if verbose >= 4:
             logging.debug(f"stream.read took {dur_read:.4f}s")
@@ -224,8 +234,8 @@ try:
         if verbose >= 4:
             logging.debug(f"DeepFace.find took {dur_find:.4f}s")
 
+        face_count = sum(1 for face in faces if not face.empty)
         if verbose >= 2:
-            face_count = sum(1 for face in faces if not face.empty)
             logging.info(f"Detected {face_count} face(s)")
 
         # Process faces
@@ -234,16 +244,19 @@ try:
         for face in faces:
             if face.empty:
                 continue
-            for identity in db:
-                if identity in face.iloc[0]["identity"]:
-                    db[identity]["cnt"] += 1
-                    db[identity]["last_seen"] = datetime.now()
-                    unknown_count -= 1
-                    if verbose >= 2:
-                        distance = face.iloc[0]["distance"]
-                        logging.info(f"Recognized: {identity} (distance: {distance:.4f}, count: {db[identity]['cnt']})")
-                    if face.iloc[0]["distance"] <= threshold_pretty_sure or db[identity]["cnt"] >= threshold_clearance:
-                        openDoor(identity, push_url, verbose)
+            identity = face.iloc[0]["identity"].split('/')[-2]
+            if identity in db:
+                db[identity]["cnt"] += 1
+                db[identity]["last_seen"] = datetime.now()
+                unknown_count -= 1
+                if verbose >= 2:
+                    distance = face.iloc[0]["distance"]
+                    logging.info(f"Recognized: {identity} (distance: {distance:.4f}, count: {db[identity]['cnt']})")
+                if face.iloc[0]["distance"] <= threshold_pretty_sure or db[identity]["cnt"] >= threshold_clearance:
+                    last_opened = db[identity]["last_opened"]
+                    if last_opened is None or (datetime.now() - last_opened).total_seconds() >= open_door_cooldown:
+                        db[identity]["last_opened"] = datetime.now()
+                        threading.Thread(target=openDoor, args=(identity, push_url, verbose), daemon=True).start()
 
         # Log unknown faces count if any
         if unknown_count > 0 and verbose >= 2:

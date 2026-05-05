@@ -46,5 +46,6 @@ def resetDB(database: Dict[str, Dict[str, Any]], threshold: int) -> None:
             diff = datetime.now() - database[identity]["last_seen"]
             if diff.total_seconds() >= threshold:
                 database[identity]["cnt"] = 0
+                database[identity]["last_opened"] = None
                 if logging.getLogger().isEnabledFor(logging.DEBUG):
                     logging.debug(f"Reset counter for {identity}")
