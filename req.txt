@@ -11,3 +11,7 @@ fire
 gunicorn
 deepface
 nvidia-ml-py
+ultralytics
+dlib
+facenet-pytorch
+missing mediapipe
