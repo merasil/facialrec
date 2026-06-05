@@ -6,6 +6,7 @@ services:
     volumes:
       - ./config:/app/config
       - ./db:/app/db
+      - ./output:/app/output
       - ./weights:/root/.deepface/weights
     # Use CDI devices instead of `gpus: all` to avoid legacy hook
     deploy:

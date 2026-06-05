@@ -15,6 +15,7 @@ WORKDIR /app
 
 COPY req.txt    /app
 COPY main.py    /app
+COPY app/       /app/app
 COPY include/   /app/include
 COPY lib/       /app/lib
 COPY db/        /app/db

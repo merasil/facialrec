@@ -1,1 +1,6 @@
-Put your folders with names and one image inside the db
+Create one folder per identity. The folder name is the exact identity name used
+by live mode and benchmarks.
+
+For live mode, place an image with the same base name in each folder, for
+example `db/Alice/Alice.jpg`. DeepFace may create model-specific datastore
+cache files in the database directory.

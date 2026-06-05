@@ -1,51 +1,33 @@
-import sys
-import requests
 import logging
 from datetime import datetime
-from typing import Dict, Any
+from typing import Any
 
-def str2bool(v: Any) -> bool:
-    """Convert string or other value to boolean"""
-    return str(v).lower() in ("yes", "y", "true", "t", "1")
+import requests
 
-def openDoor(identity: str, push_url: str, verbose: int = 1) -> bool:
-    """
-    Trigger door opening mechanism via HTTP request
 
-    Args:
-        identity: Name of the person to open the door for
-        push_url: URL to trigger the door mechanism
-        verbose: Logging verbosity level (0-4)
-
-    Returns:
-        True if request was successful, False otherwise
-    """
+def door_open(door_name: str, door_url: str, door_verbose: int = 1) -> bool:
     try:
-        if verbose >= 1:
-            logging.info(f"Opened for {identity}")
-        response = requests.get(push_url, params={"value": "true"}, timeout=5)
-        response.raise_for_status()
+        if door_verbose >= 1:
+            logging.info("Opened for %s", door_name)
+        door_resp = requests.get(
+            door_url,
+            params={"value": "true"},
+            timeout=5,
+        )
+        door_resp.raise_for_status()
         return True
-    except requests.exceptions.RequestException as e:
-        logging.error(f"Failed to open door for {identity}: {e}")
+    except requests.exceptions.RequestException as door_err:
+        logging.error("Failed to open door for %s: %s", door_name, door_err)
         return False
 
-def resetDB(database: Dict[str, Dict[str, Any]], threshold: int) -> None:
-    """
-    Reset recognition counters for identities that haven't been seen recently
 
-    Args:
-        database: Dictionary containing identity data with counters and timestamps
-        threshold: Time threshold in seconds after which to reset the counter
-    """
-    if not database:
-        return
-
-    for identity in database:
-        if database[identity]["cnt"] != 0:
-            diff = datetime.now() - database[identity]["last_seen"]
-            if diff.total_seconds() >= threshold:
-                database[identity]["cnt"] = 0
-                database[identity]["last_opened"] = None
-                if logging.getLogger().isEnabledFor(logging.DEBUG):
-                    logging.debug(f"Reset counter for {identity}")
+def db_reset(db_data: dict[str, dict[str, Any]], db_threshold: int) -> None:
+    for db_name, db_item in db_data.items():
+        if db_item["cnt"] == 0:
+            continue
+        db_diff = datetime.now() - db_item["last_seen"]
+        if db_diff.total_seconds() < db_threshold:
+            continue
+        db_item["cnt"] = 0
+        db_item["last_opened"] = None
+        logging.debug("Reset counter for %s", db_name)

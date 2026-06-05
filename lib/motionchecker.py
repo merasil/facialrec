@@ -1,225 +1,155 @@
-import requests
-import time
-import threading
 import logging
-from typing import Optional
-import cv2
-import numpy as np
+import threading
+from time import sleep, time
+from typing import Any, Optional
 
-class MotionChecker:
-    """
-    Monitor motion detection endpoint in background thread or use internal motion detection
+import requests
 
-    Continuously polls a motion detection URL and signals when motion is detected,
-    or performs internal motion detection using frame differencing.
-    """
 
-    def __init__(self, motion_url: Optional[str], stream_reader=None,
-                 use_internal: bool = False, threshold: int = 25, min_area: float = 0.2,
-                 cooldown_seconds: int = 5, verbose: int = 1, resize: bool = False,
-                 background_alpha: float = 0.05):
-        """
-        Initialize the motion checker
+class MotChecker:
+    """Monitor external motion state or detect motion from a stream."""
 
-        Args:
-            motion_url: URL endpoint to check for motion status (can be None if use_internal=True)
-            stream_reader: StreamReader instance for internal motion detection
-            use_internal: Use internal motion detection instead of external API
-            threshold: Pixel difference threshold for motion detection (0-255)
-            min_area: Minimum area as percentage of frame (0.0-100.0) to consider as motion
-            cooldown_seconds: Seconds to keep motion active after last detection
-            verbose: Logging verbosity level (0-4)
-            resize: Downscale motion frames to 320x240 for faster processing
-            background_alpha: Weight for running background reference (0.0-1.0).
-                Lower = slower adaptation, better at catching slow motion.
-        """
-        self.motion_url = motion_url
-        self.stream_reader = stream_reader
-        self.use_internal = use_internal
-        self.threshold = threshold
-        self.min_area = min_area
-        self.cooldown_seconds = cooldown_seconds
-        self.verbose = verbose
-        self.resize = resize
-        self.background_alpha = background_alpha
-        self.result = False
-        self.running = False
-        self.session = requests.Session() if not use_internal else None
-        self.event = threading.Event()
-        self.thread = None
-        self.prev_frame = None
-        self.last_motion_time = None
-        self.prev_result = False  # Track previous motion state for transitions
+    def __init__(
+        self,
+        mot_url: Optional[str],
+        mot_stream: Any = None,
+        mot_internal: bool = False,
+        mot_threshold: int = 25,
+        mot_area: float = 0.2,
+        mot_cooldown: int = 5,
+        mot_verbose: int = 1,
+        mot_resize: bool = False,
+        mot_alpha: float = 0.05,
+    ):
+        self.mot_url = mot_url
+        self.mot_stream = mot_stream
+        self.mot_internal = mot_internal
+        self.mot_threshold = mot_threshold
+        self.mot_area = mot_area
+        self.mot_cooldown = mot_cooldown
+        self.mot_verbose = mot_verbose
+        self.mot_resize = mot_resize
+        self.mot_alpha = mot_alpha
+        self.mot_result = False
+        self.mot_run = False
+        self.mot_session = requests.Session() if not mot_internal else None
+        self.mot_event = threading.Event()
+        self.mot_thread = None
+        self.mot_prev = None
+        self.mot_last = None
+        self.mot_state = False
 
-    def start(self) -> None:
-        """Start the motion checker thread"""
-        if not self.running:
-            self.running = True
-            self.thread = threading.Thread(target=self._update_loop, daemon=True)
-            self.thread.start()
-            logging.info("MotionChecker started")
-        else:
-            logging.warning("MotionChecker already running")
-
-    def _update_loop(self) -> None:
-        """Main update loop running in background thread"""
-        while self.running:
-            if self.use_internal:
-                motion_detected = self._check_motion_internal()
-            else:
-                motion_detected = self._check_motion()
-
-            # Update last motion time if motion detected
-            if motion_detected:
-                self.last_motion_time = time.time()
-
-            # Keep motion active if within cooldown period
-            if self.last_motion_time:
-                time_since_motion = time.time() - self.last_motion_time
-                if time_since_motion <= self.cooldown_seconds:
-                    self.result = True
-                    self.event.set()
-                else:
-                    self.result = False
-                    self.event.clear()
-            else:
-                self.result = False
-                self.event.clear()
-
-            # Detect state transitions
-            if self.result != self.prev_result:
-                if self.result:
-                    if self.verbose >= 3:
-                        logging.info("Motion detected - starting face recognition")
-                else:
-                    if self.verbose >= 3:
-                        logging.info("Motion stopped - waiting for next motion")
-                self.prev_result = self.result
-
-            time.sleep(0.1 if self.use_internal else 1)
-
-    def stop(self) -> None:
-        """Stop the motion checker and clean up resources"""
-        if not self.running:
+    def mot_start(self) -> None:
+        if self.mot_run:
+            logging.warning("Motion checker already running")
             return
+        self.mot_run = True
+        self.mot_thread = threading.Thread(target=self.mot_loop, daemon=True)
+        self.mot_thread.start()
+        logging.info("Motion checker started")
 
-        self.running = False
-
-        if self.session:
-            try:
-                self.session.close()
-            except Exception as e:
-                logging.error(f"Error closing session: {e}")
-
-        if self.thread and self.thread.is_alive():
-            self.thread.join(timeout=2)
-
-        logging.info("MotionChecker stopped")
-
-    def _check_motion(self) -> bool:
-        """
-        Check motion status from the configured URL
-
-        Returns:
-            True if motion detected, False otherwise
-        """
-        if not self.motion_url or self.motion_url == "None":
-            logging.error("External motion detection enabled but motion_url not configured")
-            return False
-
-        try:
-            motion_response = self.session.get(self.motion_url, timeout=5)
-            if motion_response.status_code not in range(200, 204):
-                logging.debug(f"Motion check returned status {motion_response.status_code}")
-                return False
+    def mot_loop(self) -> None:
+        while self.mot_run:
+            if self.mot_internal:
+                mot_found = self.mot_check_internal()
             else:
-                motion_data = motion_response.json()
-                return motion_data.get("val") == "ON"
-        except requests.exceptions.RequestException as e:
-            logging.debug(f"Motion check failed: {e}")
-            return False
-        except Exception as e:
-            logging.error(f"Unexpected error checking motion: {e}")
-            return False
+                mot_found = self.mot_check_external()
 
-    def _check_motion_internal(self) -> bool:
-        """
-        Check motion using internal frame differencing
+            if mot_found:
+                self.mot_last = time()
+            if self.mot_last and time() - self.mot_last <= self.mot_cooldown:
+                self.mot_result = True
+                self.mot_event.set()
+            else:
+                self.mot_result = False
+                self.mot_event.clear()
 
-        Returns:
-            True if motion detected, False otherwise
-        """
-        if not self.stream_reader:
-            logging.error("Internal motion detection requires stream_reader")
+            if self.mot_result != self.mot_state:
+                if self.mot_verbose >= 3:
+                    mot_text = "detected" if self.mot_result else "stopped"
+                    logging.info("Motion %s", mot_text)
+                self.mot_state = self.mot_result
+            sleep(0.1 if self.mot_internal else 1)
+
+    def mot_stop(self) -> None:
+        if not self.mot_run:
+            return
+        self.mot_run = False
+        if self.mot_session:
+            self.mot_session.close()
+        if self.mot_thread and self.mot_thread.is_alive():
+            self.mot_thread.join(timeout=2)
+        logging.info("Motion checker stopped")
+
+    def mot_check_external(self) -> bool:
+        if not self.mot_url or self.mot_url == "None":
+            logging.error("External motion URL is not configured")
             return False
-
         try:
-            # Get current frame with short timeout
-            frame = self.stream_reader.read(timeout=0.5)
-            if frame is None:
+            mot_resp = self.mot_session.get(self.mot_url, timeout=5)
+            if mot_resp.status_code not in range(200, 204):
+                logging.debug("Motion check returned %s", mot_resp.status_code)
                 return False
-
-            # Convert to grayscale and blur to reduce noise
-            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            if self.resize:
-                gray = cv2.resize(gray, (320, 240), interpolation=cv2.INTER_AREA)
-            gray = cv2.GaussianBlur(gray, (21, 21), 0)
-
-            # Initialize running background reference on first run
-            if self.prev_frame is None:
-                self.prev_frame = gray.astype("float")
-                return False
-
-            # Compare against slowly adapting background (catches slow motion)
-            ref = cv2.convertScaleAbs(self.prev_frame)
-            frame_delta = cv2.absdiff(ref, gray)
-            thresh = cv2.threshold(frame_delta, self.threshold, 255, cv2.THRESH_BINARY)[1]
-
-            # Dilate to fill gaps
-            thresh = cv2.dilate(thresh, None, iterations=2)
-
-            # Find contours
-            contours, _ = cv2.findContours(thresh.copy(), cv2.RETR_EXTERNAL, cv2.CHAIN_APPROX_SIMPLE)
-
-            # Calculate minimum area based on frame size
-            # min_area is stored as percentage of frame (0.0-100.0)
-            frame_area = gray.shape[0] * gray.shape[1]
-            min_area_pixels = int((self.min_area / 100.0) * frame_area)
-
-            # Check if any contour is large enough
-            motion_detected = False
-            for contour in contours:
-                if cv2.contourArea(contour) >= min_area_pixels:
-                    motion_detected = True
-                    break
-
-            # Update background reference with weighted average
-            cv2.accumulateWeighted(gray, self.prev_frame, self.background_alpha)
-            return motion_detected
-
-        except Exception as e:
-            logging.error(f"Error in internal motion detection: {e}")
+            return mot_resp.json().get("val") == "ON"
+        except requests.exceptions.RequestException as mot_err:
+            logging.debug("Motion check failed: %s", mot_err)
+            return False
+        except Exception as mot_err:
+            logging.error("Unexpected motion check error: %s", mot_err)
             return False
 
-    def wait_motion(self, timeout: Optional[float] = None) -> bool:
-        """
-        Wait for motion to be detected
+    def mot_check_internal(self) -> bool:
+        if not self.mot_stream:
+            logging.error("Internal motion detection requires a stream")
+            return False
+        try:
+            import cv2
 
-        Args:
-            timeout: Maximum time to wait in seconds
+            mot_frame = self.mot_stream.str_read(str_timeout=0.5)
+            if mot_frame is None:
+                return False
+            mot_gray = cv2.cvtColor(mot_frame, cv2.COLOR_BGR2GRAY)
+            if self.mot_resize:
+                mot_gray = cv2.resize(mot_gray, (320, 240), interpolation=cv2.INTER_AREA)
+            mot_gray = cv2.GaussianBlur(mot_gray, (21, 21), 0)
+            if self.mot_prev is None:
+                self.mot_prev = mot_gray.astype("float")
+                return False
 
-        Returns:
-            True if motion detected, False if timeout
-        """
-        return self.event.wait(timeout)
+            mot_ref = cv2.convertScaleAbs(self.mot_prev)
+            mot_delta = cv2.absdiff(mot_ref, mot_gray)
+            mot_mask = cv2.threshold(
+                mot_delta,
+                self.mot_threshold,
+                255,
+                cv2.THRESH_BINARY,
+            )[1]
+            mot_mask = cv2.dilate(mot_mask, None, iterations=2)
+            mot_contours = cv2.findContours(
+                mot_mask.copy(),
+                cv2.RETR_EXTERNAL,
+                cv2.CHAIN_APPROX_SIMPLE,
+            )[0]
+            mot_pixels = mot_gray.shape[0] * mot_gray.shape[1]
+            mot_min = int((self.mot_area / 100.0) * mot_pixels)
+            mot_found = any(
+                cv2.contourArea(mot_contour) >= mot_min
+                for mot_contour in mot_contours
+            )
+            cv2.accumulateWeighted(mot_gray, self.mot_prev, self.mot_alpha)
+            return mot_found
+        except Exception as mot_err:
+            logging.error("Internal motion detection failed: %s", mot_err)
+            return False
 
-    def clear_event(self) -> None:
-        """Clear the motion detection event"""
-        self.event.clear()
+    def mot_wait(self, mot_timeout: Optional[float] = None) -> bool:
+        return self.mot_event.wait(mot_timeout)
+
+    def mot_clear(self) -> None:
+        self.mot_event.clear()
 
     def __del__(self):
-        """Cleanup on deletion"""
         try:
-            self.stop()
+            self.mot_stop()
         except Exception:
             pass

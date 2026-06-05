@@ -11,6 +11,7 @@ It’s tested on Linux with NVIDIA GPUs and Docker Engine + Docker Compose.
 - Docker Compose service: `facialrec`
 - RTSP over TCP for OpenCV (`OPENCV_FFMPEG_CAPTURE_OPTIONS=rtsp_transport;tcp`)
 - Persistent volumes for config, DB, and DeepFace weights
+- Live mode plus sample creation, model benchmarks, and VRAM measurements
 
 ---
 
@@ -65,6 +66,7 @@ services:
     volumes:
       - ./config:/app/config
       - ./db:/app/db
+      - ./output:/app/output
       - ./weights:/root/.deepface/weights
     # Request GPUs via CDI device names
     deploy:
@@ -90,6 +92,7 @@ services:
     volumes:
       - ./config:/app/config
       - ./db:/app/db
+      - ./output:/app/output
       - ./weights:/root/.deepface/weights
     deploy:
       resources:
@@ -144,6 +147,81 @@ docker compose up -d --build
 ```
 On first start, DeepFace may download model weights into /root/.deepface/weights (mounted from ./weights).
 
+## Command modes
+
+Without a subcommand, `main.py` starts the normal live recognition mode:
+
+```bash
+python3 main.py
+python3 main.py --detector retinaface --recognizer Facenet512
+```
+
+CLI options override values from `config/config.ini`. A different file can be
+selected with `--config`.
+
+### Create test samples
+
+Record a short video and save every fifth frame as a JPEG:
+
+```bash
+python3 main.py create-test-samples --duration 10 --frame-step 5
+```
+
+Keep only selected frames containing a detected face and retain the source MP4:
+
+```bash
+python3 main.py create-test-samples \
+  --face-only \
+  --keep-video \
+  --detector retinaface
+```
+
+Files are written below `output/<unix-timestamp>/`. JPEG names are sequential,
+starting with `000001.jpg`.
+
+### Benchmark models
+
+Benchmark every detector, recognizer, and metric combination against an image
+folder or video:
+
+```bash
+python3 main.py benchmark \
+  --input test-data \
+  --name Alice \
+  --db db \
+  --detectors retinaface mtcnn \
+  --recognizers Facenet512 ArcFace \
+  --metric cosine euclidean euclidean_l2 \
+  --output output/benchmark.txt
+```
+
+Only images directly inside an input directory are processed. Videos are
+processed frame by frame. Each combination is loaded and run once before timing
+starts. The table reports processed inputs, detections, correct and incorrect
+recognitions, unknown faces, errors, total time, and average time per input.
+Recognition percentage is calculated from detected inputs.
+Timing excludes model loading, warm-up, and video decoding.
+
+### Measure VRAM
+
+Measure detector and recognizer combinations on one representative input frame:
+
+```bash
+python3 main.py vram \
+  --input test-data \
+  --db db \
+  --detectors retinaface mtcnn \
+  --recognizers Facenet512 ArcFace \
+  --runs 3 \
+  --gpu 0 \
+  --output output/vram.txt
+```
+
+Each combination runs in a separate process so TensorFlow and CUDA memory is
+released between measurements. TensorFlow columns show allocator memory.
+NVML columns show the complete process allocation, including CUDA context and
+reserved memory. Values are reported in MiB.
+
 ## 🔎 Verifications & Tips
 
 - **Autostart**: Ensure the container exists and has a restart policy:
@@ -175,4 +253,5 @@ Either keep specs in default locations (```/etc/cdi```, ```/var/run/cdi```) supp
 
 - `./config` → `/app/config`  
 - `./db` → `/app/db`  
+- `./output` → `/app/output`
 - `./weights` → `/root/.deepface/weights` (DeepFace model cache)

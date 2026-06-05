@@ -1,135 +1,102 @@
-import threading
-import cv2
-import time
 import logging
-from queue import Queue, Empty
-from typing import Optional
-import numpy as np
+import threading
+from queue import Empty, Queue
+from time import sleep
+from typing import Any, Optional
 
-class StreamReader:
-    """
-    Thread-safe RTSP stream reader with automatic reconnection
 
-    Continuously reads frames from an RTSP stream in a background thread
-    and provides them through a thread-safe queue.
-    """
+class StrReader:
+    """Continuously read a stream into a small thread-safe frame queue."""
 
-    def __init__(self, rtsp_url: str, reconnect_delay: int = 5, queue_size: int = 5):
-        """
-        Initialize the stream reader
+    def __init__(self, str_url: str, str_delay: int = 5, str_size: int = 5):
+        self.str_url = str_url
+        self.str_delay = str_delay
+        self.str_cap = None
+        self.str_queue = Queue(maxsize=str_size)
+        self.str_run = threading.Event()
+        self.str_thread = None
 
-        Args:
-            rtsp_url: RTSP stream URL
-            reconnect_delay: Seconds to wait before reconnection attempts
-            queue_size: Maximum number of frames to buffer
-        """
-        self.rtsp_url = rtsp_url
-        self.reconnect_delay = reconnect_delay
-        self.capture = None
-        self.frame_queue = Queue(maxsize=queue_size)
-        self.running = threading.Event()
-        self.thread = None
+    def str_start(self) -> None:
+        if self.str_run.is_set():
+            logging.warning("Stream reader already running")
+            return
+        self.str_run.set()
+        self.str_thread = threading.Thread(target=self.str_loop, daemon=True)
+        self.str_thread.start()
+        logging.info("Stream reader started")
 
-    def start(self) -> None:
-        """Start the stream reader thread"""
-        if not self.running.is_set():
-            self.running.set()
-            self.thread = threading.Thread(target=self._capture_loop, daemon=True)
-            self.thread.start()
-            logging.info("StreamReader started")
-        else:
-            logging.warning("StreamReader already running")
-
-    def _connect(self) -> bool:
-        """
-        Connect or reconnect to the RTSP stream
-
-        Returns:
-            True if connection successful, False otherwise
-        """
+    def str_connect(self) -> bool:
         try:
-            if self.capture is not None:
-                self.capture.release()
-                self.capture = None
-
-            self.capture = cv2.VideoCapture(self.rtsp_url)
-            if not self.capture.isOpened():
-                logging.error(f"Cannot open stream {self.rtsp_url}. Retrying in {self.reconnect_delay}s")
-                time.sleep(self.reconnect_delay)
-                return False
-            return True
-        except Exception as e:
-            logging.error(f"Error connecting to stream: {e}")
-            time.sleep(self.reconnect_delay)
+            import cv2
+        except ImportError as str_err:
+            logging.error("OpenCV is not installed: %s", str_err)
+            sleep(self.str_delay)
             return False
 
-    def _capture_loop(self) -> None:
-        """Main capture loop running in background thread"""
-        while self.running.is_set():
-            if self.capture is None or not self.capture.isOpened():
-                self._connect()
-                continue
-
-            success, frame = self.capture.read()
-            if not success:
-                logging.error("Failed to read frame. Reconnecting...")
-                self._connect()
-                continue
-
-            try:
-                # If queue is full, discard oldest frame
-                if self.frame_queue.full():
-                    try:
-                        self.frame_queue.get_nowait()
-                    except Empty:
-                        pass
-                self.frame_queue.put_nowait(frame)
-            except Exception as e:
-                logging.error(f"Frame queue error: {e}")
-
-    def read(self, timeout: Optional[float] = None) -> Optional[np.ndarray]:
-        """
-        Read the next frame from the queue
-
-        Args:
-            timeout: Maximum time to wait for a frame in seconds
-
-        Returns:
-            Frame as numpy array, or None if no frame available
-        """
         try:
-            return self.frame_queue.get(timeout=timeout)
+            if self.str_cap is not None:
+                self.str_cap.release()
+            self.str_cap = cv2.VideoCapture(self.str_url)
+            if not self.str_cap.isOpened():
+                logging.error(
+                    "Cannot open stream %s. Retrying in %ss",
+                    self.str_url,
+                    self.str_delay,
+                )
+                sleep(self.str_delay)
+                return False
+            return True
+        except Exception as str_err:
+            logging.error("Error connecting to stream: %s", str_err)
+            sleep(self.str_delay)
+            return False
+
+    def str_loop(self) -> None:
+        while self.str_run.is_set():
+            if self.str_cap is None or not self.str_cap.isOpened():
+                self.str_connect()
+                continue
+
+            str_ok, str_frame = self.str_cap.read()
+            if not str_ok:
+                logging.error("Failed to read frame. Reconnecting")
+                self.str_connect()
+                continue
+
+            if self.str_queue.full():
+                try:
+                    self.str_queue.get_nowait()
+                except Empty:
+                    pass
+            try:
+                self.str_queue.put_nowait(str_frame)
+            except Exception as str_err:
+                logging.error("Frame queue error: %s", str_err)
+
+    def str_read(self, str_timeout: Optional[float] = None) -> Optional[Any]:
+        try:
+            return self.str_queue.get(timeout=str_timeout)
         except Empty:
             return None
 
-    def stop(self) -> None:
-        """Stop the stream reader and clean up resources"""
-        if not self.running.is_set():
+    def str_stop(self) -> None:
+        if not self.str_run.is_set():
             return
-
-        self.running.clear()
-        if self.thread and self.thread.is_alive():
-            self.thread.join(timeout=2)
-
-        if self.capture:
+        self.str_run.clear()
+        if self.str_thread and self.str_thread.is_alive():
+            self.str_thread.join(timeout=2)
+        if self.str_cap:
             try:
-                self.capture.release()
-            except Exception as e:
-                logging.error(f"Error releasing capture: {e}")
-            self.capture = None
-
-        # Clear queue
-        try:
-            with self.frame_queue.mutex:
-                self.frame_queue.queue.clear()
-        except Exception as e:
-            logging.error(f"Error clearing queue: {e}")
-
-        logging.info("StreamReader stopped")
+                self.str_cap.release()
+            except Exception as str_err:
+                logging.error("Error releasing capture: %s", str_err)
+            self.str_cap = None
+        with self.str_queue.mutex:
+            self.str_queue.queue.clear()
+        logging.info("Stream reader stopped")
 
     def __del__(self):
-        """Cleanup on deletion"""
         try:
-            self.stop()
+            self.str_stop()
         except Exception:
             pass
