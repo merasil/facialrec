@@ -49,18 +49,9 @@ def vram_run(vram_data: dict[str, Any]) -> dict[str, Any]:
     vram_gpu = int(vram_data["gpu"])
     vram_nv, vram_handle = vram_nvml(vram_gpu)
     vram_base = vram_used(vram_nv, vram_handle)
-    vram_peak = [vram_base or 0]
     vram_stop = threading.Event()
-
-    def vram_poll() -> None:
-        while not vram_stop.is_set():
-            vram_value = vram_used(vram_nv, vram_handle)
-            if vram_value is not None:
-                vram_peak[0] = max(vram_peak[0], vram_value)
-            sleep(0.02)
-
-    vram_thread = threading.Thread(target=vram_poll, daemon=True)
-    vram_thread.start()
+    vram_thread = None
+    vram_peak = [0]
     try:
         os.environ["CUDA_VISIBLE_DEVICES"] = str(vram_gpu)
         vram_tf = face_tf(0)
@@ -71,13 +62,44 @@ def vram_run(vram_data: dict[str, Any]) -> dict[str, Any]:
         face_load(vram_data["detector"], vram_data["recognizer"])
         vram_loaded = vram_used(vram_nv, vram_handle)
         vram_tfload = vram_tfinfo(vram_tf)["current"]
+
+        # Build the DeepFace datastore and initialize all runtime workspaces
+        # before peak measurement starts.
+        vram_image = med_first(vram_data["input"])
+        try:
+            face_find(
+                vram_image,
+                vram_data["db"],
+                vram_data["detector"],
+                vram_data["recognizer"],
+                vram_data["metric"],
+                bool(vram_data["align"]),
+                bool(vram_data["enforce"]),
+                True,
+            )
+        except Exception as vram_err:
+            if not face_missing(vram_err):
+                raise
+
         try:
             vram_tf.config.experimental.reset_memory_stats("GPU:0")
         except Exception:
             pass
 
-        vram_image = med_first(vram_data["input"])
-        for vram_pos in range(int(vram_data["runs"]) + 1):
+        vram_current = vram_used(vram_nv, vram_handle)
+        vram_peak[0] = vram_current or 0
+
+        def vram_poll() -> None:
+            while not vram_stop.is_set():
+                vram_value = vram_used(vram_nv, vram_handle)
+                if vram_value is not None:
+                    vram_peak[0] = max(vram_peak[0], vram_value)
+                sleep(0.02)
+
+        vram_thread = threading.Thread(target=vram_poll, daemon=True)
+        vram_thread.start()
+
+        for vram_pos in range(int(vram_data["runs"])):
             try:
                 face_find(
                     vram_image,
@@ -87,7 +109,7 @@ def vram_run(vram_data: dict[str, Any]) -> dict[str, Any]:
                     vram_data["metric"],
                     bool(vram_data["align"]),
                     bool(vram_data["enforce"]),
-                    vram_pos == 0,
+                    False,
                 )
             except Exception as vram_err:
                 if not face_missing(vram_err):
@@ -98,7 +120,8 @@ def vram_run(vram_data: dict[str, Any]) -> dict[str, Any]:
         vram_final = vram_used(vram_nv, vram_handle)
     finally:
         vram_stop.set()
-        vram_thread.join(timeout=1)
+        if vram_thread is not None:
+            vram_thread.join(timeout=1)
         if vram_nv is not None:
             try:
                 vram_nv.nvmlShutdown()

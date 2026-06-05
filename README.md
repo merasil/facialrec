@@ -235,6 +235,9 @@ Each combination runs in a separate process so TensorFlow and CUDA memory is
 released between measurements. TensorFlow columns show allocator memory.
 NVML columns show the complete process allocation, including CUDA context and
 reserved memory. Values are reported in MiB.
+Model loading, datastore creation, and one full inference warm-up happen before
+peak measurement starts. This prevents missing DeepFace cache files from
+inflating one recognizer's result.
 
 ## 🔎 Verifications & Tips
 

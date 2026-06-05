@@ -3,6 +3,7 @@ import os
 import subprocess
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from app.benchmark import bench_one, bench_spawn, bench_status
@@ -11,6 +12,7 @@ from app.config import cfg_get_bool, cfg_list, cfg_pick
 from app.face import face_missing, face_result
 from app.samples import sample_folder
 from app.table import tab_render
+from app.vram_worker import vram_run
 
 
 class TestFrame:
@@ -160,6 +162,47 @@ class CoreTests(unittest.TestCase):
         test_table = tab_render(["A", "B"], [["x", 12]])
         self.assertIn("| A | B  |", test_table)
         self.assertIn("| x | 12 |", test_table)
+
+    @patch("app.vram_worker.med_first", return_value="frame")
+    @patch("app.vram_worker.face_load")
+    @patch("app.vram_worker.face_find")
+    @patch("app.vram_worker.face_tf")
+    @patch("app.vram_worker.vram_nvml", return_value=(None, None))
+    def test_vram_warm(
+        self,
+        test_nvml,
+        test_tf,
+        test_find,
+        test_load,
+        test_first,
+    ):
+        test_exp = SimpleNamespace(
+            get_memory_info=lambda test_name: {"current": 100, "peak": 200},
+            reset_memory_stats=lambda test_name: None,
+        )
+        test_cfg = SimpleNamespace(
+            experimental=test_exp,
+            list_logical_devices=lambda test_name: [object()],
+        )
+        test_tf.return_value = SimpleNamespace(config=test_cfg)
+        test_data = {
+            "gpu": 0,
+            "input": "input",
+            "db": "db",
+            "detector": "yolov8m",
+            "recognizer": "Facenet512",
+            "metric": "euclidean_l2",
+            "align": False,
+            "enforce": True,
+            "runs": 3,
+        }
+
+        vram_run(test_data)
+
+        self.assertEqual(test_find.call_count, 4)
+        self.assertTrue(test_find.call_args_list[0].args[-1])
+        for test_call in test_find.call_args_list[1:]:
+            self.assertFalse(test_call.args[-1])
 
 
 if __name__ == "__main__":
