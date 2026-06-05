@@ -52,16 +52,44 @@ def vram_worker(vram_data: dict[str, Any]) -> tuple[Optional[dict[str, Any]], st
         text=True,
         cwd=vram_root,
     )
-    if vram_proc.returncode != 0:
-        vram_lines = vram_proc.stderr.strip().splitlines()
-        vram_error = (
-            vram_lines[-1] if vram_lines else f"worker exit {vram_proc.returncode}"
-        )
-        return None, vram_error
 
     for vram_line in reversed(vram_proc.stdout.splitlines()):
         if vram_line.startswith("VRAM_JSON="):
-            return json.loads(vram_line.removeprefix("VRAM_JSON=")), "ok"
+            vram_payload = json.loads(vram_line.removeprefix("VRAM_JSON="))
+            if "ok" not in vram_payload:
+                return vram_payload, "ok"
+            if vram_payload["ok"]:
+                return vram_payload["result"], "ok"
+            return None, str(vram_payload.get("error", "worker failed"))
+
+    if vram_proc.returncode != 0:
+        vram_stage = next(
+            (
+                vram_line.removeprefix("VRAM_STAGE=").strip()
+                for vram_line in reversed(vram_proc.stdout.splitlines())
+                if vram_line.startswith("VRAM_STAGE=")
+            ),
+            "",
+        )
+        vram_lines = [
+            vram_line.strip()
+            for vram_line in vram_proc.stderr.splitlines()
+            if vram_line.strip()
+        ]
+        vram_detail = next(
+            (
+                vram_line.removeprefix("VRAM worker failed:").strip()
+                for vram_line in reversed(vram_lines)
+                if vram_line.startswith("VRAM worker failed:")
+            ),
+            "",
+        )
+        vram_error = f"worker exit {vram_proc.returncode}"
+        if vram_stage:
+            vram_error += f" during {vram_stage}"
+        if vram_detail:
+            vram_error += f": {vram_detail}"
+        return None, vram_error
     return None, "worker returned no result"
 
 

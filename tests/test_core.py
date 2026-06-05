@@ -12,6 +12,7 @@ from app.config import cfg_get_bool, cfg_list, cfg_pick
 from app.face import face_missing, face_result
 from app.samples import sample_folder
 from app.table import tab_render
+from app.vram import vram_worker
 from app.vram_worker import vram_run
 
 
@@ -77,6 +78,7 @@ class CoreTests(unittest.TestCase):
 
     def test_face_log(self):
         self.assertEqual(os.environ["DEEPFACE_LOG_LEVEL"], "40")
+        self.assertEqual(os.environ["TF_CPP_MIN_LOG_LEVEL"], "2")
 
     def test_face_result(self):
         test_frames = [
@@ -176,15 +178,19 @@ class CoreTests(unittest.TestCase):
         test_load,
         test_first,
     ):
+        test_order = []
         test_exp = SimpleNamespace(
             get_memory_info=lambda test_name: {"current": 100, "peak": 200},
             reset_memory_stats=lambda test_name: None,
         )
         test_cfg = SimpleNamespace(
             experimental=test_exp,
-            list_logical_devices=lambda test_name: [object()],
+            list_logical_devices=lambda test_name: (
+                test_order.append("tensorflow") or [object()]
+            ),
         )
         test_tf.return_value = SimpleNamespace(config=test_cfg)
+        test_load.side_effect = lambda *test_args: test_order.append("models")
         test_data = {
             "gpu": 0,
             "input": "input",
@@ -199,10 +205,42 @@ class CoreTests(unittest.TestCase):
 
         vram_run(test_data)
 
+        self.assertEqual(test_order, ["models", "tensorflow"])
         self.assertEqual(test_find.call_count, 4)
         self.assertTrue(test_find.call_args_list[0].args[-1])
         for test_call in test_find.call_args_list[1:]:
             self.assertFalse(test_call.args[-1])
+
+    @patch("app.vram.subprocess.run")
+    def test_vram_error(self, test_run):
+        test_run.return_value = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout=(
+                'VRAM_JSON={"error": "CUDA out of memory", '
+                '"ok": false, "type": "RuntimeError"}\n'
+            ),
+            stderr="I0000 gpu_device.cc:2043] Created device GPU:0\n",
+        )
+
+        test_result, test_status = vram_worker({"detector": "yolov8m"})
+
+        self.assertIsNone(test_result)
+        self.assertEqual(test_status, "CUDA out of memory")
+
+    @patch("app.vram.subprocess.run")
+    def test_vram_exit(self, test_run):
+        test_run.return_value = subprocess.CompletedProcess(
+            args=[],
+            returncode=-9,
+            stdout="VRAM_STAGE=model loading\n",
+            stderr="I0000 gpu_device.cc:2043] Created device GPU:0\n",
+        )
+
+        test_result, test_status = vram_worker({"detector": "yolov8m"})
+
+        self.assertIsNone(test_result)
+        self.assertEqual(test_status, "worker exit -9 during model loading")
 
 
 if __name__ == "__main__":

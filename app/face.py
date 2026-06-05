@@ -5,6 +5,7 @@ from typing import Any
 
 
 os.environ.setdefault("TF_USE_LEGACY_KERAS", "1")
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
 os.environ.setdefault("DEEPFACE_LOG_LEVEL", str(logging.ERROR))
 
 

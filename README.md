@@ -238,6 +238,9 @@ reserved memory. Values are reported in MiB.
 Model loading, datastore creation, and one full inference warm-up happen before
 peak measurement starts. This prevents missing DeepFace cache files from
 inflating one recognizer's result.
+PyTorch-backed detectors are initialized before the TensorFlow recognizer,
+matching DeepFace's loading order in live mode. If a worker exits natively, the
+status column reports its exit code and last completed phase.
 
 ## 🔎 Verifications & Tips
 

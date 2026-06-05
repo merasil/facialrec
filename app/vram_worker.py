@@ -9,6 +9,10 @@ from app.face import face_find, face_load, face_missing, face_tf
 from app.media import med_first
 
 
+def vram_stage(vram_name: str) -> None:
+    print(f"VRAM_STAGE={vram_name}", flush=True)
+
+
 def vram_nvml(vram_gpu: int) -> tuple[Any, Any]:
     try:
         import pynvml
@@ -53,18 +57,23 @@ def vram_run(vram_data: dict[str, Any]) -> dict[str, Any]:
     vram_thread = None
     vram_peak = [0]
     try:
+        vram_stage("configure")
         os.environ["CUDA_VISIBLE_DEVICES"] = str(vram_gpu)
         vram_tf = face_tf(0)
+
+        # DeepFace loads the detector first. This lets PyTorch-backed detectors
+        # initialize CUDA before the TensorFlow recognizer, as in live mode.
+        vram_stage("model loading")
+        face_load(vram_data["detector"], vram_data["recognizer"])
         if not vram_tf.config.list_logical_devices("GPU"):
             raise RuntimeError("TensorFlow did not find a GPU")
-        vram_tfbase = vram_tfinfo(vram_tf)["current"]
-
-        face_load(vram_data["detector"], vram_data["recognizer"])
+        vram_tfbase = 0
         vram_loaded = vram_used(vram_nv, vram_handle)
         vram_tfload = vram_tfinfo(vram_tf)["current"]
 
         # Build the DeepFace datastore and initialize all runtime workspaces
         # before peak measurement starts.
+        vram_stage("warm-up")
         vram_image = med_first(vram_data["input"])
         try:
             face_find(
@@ -99,6 +108,7 @@ def vram_run(vram_data: dict[str, Any]) -> dict[str, Any]:
         vram_thread = threading.Thread(target=vram_poll, daemon=True)
         vram_thread.start()
 
+        vram_stage("measurement")
         for vram_pos in range(int(vram_data["runs"])):
             try:
                 face_find(
@@ -118,6 +128,7 @@ def vram_run(vram_data: dict[str, Any]) -> dict[str, Any]:
 
         vram_tfpeak = vram_tfinfo(vram_tf)["peak"]
         vram_final = vram_used(vram_nv, vram_handle)
+        vram_stage("done")
     finally:
         vram_stop.set()
         if vram_thread is not None:
@@ -148,11 +159,15 @@ def vram_main() -> int:
     try:
         vram_data = json.loads(sys.argv[1])
         vram_result = vram_run(vram_data)
-        print("VRAM_JSON=" + json.dumps(vram_result, sort_keys=True))
-        return 0
+        vram_payload = {"ok": True, "result": vram_result}
     except Exception as vram_err:
-        print(f"VRAM worker failed: {vram_err}", file=sys.stderr)
-        return 1
+        vram_payload = {
+            "ok": False,
+            "error": " ".join(str(vram_err).split()),
+            "type": type(vram_err).__name__,
+        }
+    print("VRAM_JSON=" + json.dumps(vram_payload, sort_keys=True), flush=True)
+    return 0
 
 
 if __name__ == "__main__":
