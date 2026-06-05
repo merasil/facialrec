@@ -24,6 +24,7 @@ BENCH_HEADS = [
     "Errors",
     "Total s",
     "ms/input",
+    "Status",
 ]
 
 
@@ -31,6 +32,28 @@ def bench_rate(bench_count: int, bench_total: int) -> str:
     if bench_total == 0:
         return "0.00"
     return f"{(bench_count / bench_total) * 100:.2f}"
+
+
+def bench_status(bench_err: Exception, bench_detector: str) -> str:
+    bench_text = " ".join(str(bench_err).split())
+    bench_lower = bench_text.lower()
+    if "facenet_pytorch" in bench_lower or "facenet-pytorch" in bench_lower:
+        return "missing facenet-pytorch"
+    bench_missing = {
+        "dlib": "missing dlib",
+        "mediapipe": "missing mediapipe",
+        "ultralytics": "missing ultralytics",
+    }
+    for bench_module, bench_hint in bench_missing.items():
+        if bench_module in bench_lower:
+            return bench_hint
+    if bench_detector == "yolov8":
+        return "invalid detector; use yolov8n, yolov8m or yolov8l"
+    if "invalid model_name" in bench_lower or "unimplemented" in bench_lower:
+        return f"invalid detector: {bench_detector}"
+    if not bench_text:
+        return type(bench_err).__name__
+    return bench_text[:120]
 
 
 def bench_warm(
@@ -152,6 +175,7 @@ def bench_one(
         str(bench_errors),
         f"{bench_time:.3f}",
         f"{bench_avg:.2f}",
+        "ok",
     ]
 
 
@@ -249,6 +273,7 @@ def bench_run(bench_args: Any, bench_cfg: Any) -> int:
                 "1",
                 "0.000",
                 "0.00",
+                bench_status(bench_err, bench_detector),
             ]
             logging.error("Combination error: %s", bench_err)
         bench_rows.append(bench_row)

@@ -1,9 +1,11 @@
+import logging
 import os
 from pathlib import Path
 from typing import Any
 
 
 os.environ.setdefault("TF_USE_LEGACY_KERAS", "1")
+os.environ.setdefault("DEEPFACE_LOG_LEVEL", str(logging.ERROR))
 
 
 class FaceError(RuntimeError):
