@@ -72,8 +72,10 @@ def face_detect(
             enforce_detection=face_enforce,
             align=face_align,
         )
-    except ValueError:
-        return False
+    except Exception as face_err:
+        if face_missing(face_err):
+            return False
+        raise
 
     if face_enforce:
         return bool(face_items)
@@ -84,13 +86,15 @@ def face_detect(
     return False
 
 
-def face_missing(face_err: ValueError) -> bool:
+def face_missing(face_err: Exception) -> bool:
     face_text = str(face_err).lower()
     face_terms = (
         "face could not be detected",
         "face could not be found",
         "no face",
         "cannot detect face",
+        "local variable 'boxes_np'",
+        "local variable 'lms_np'",
     )
     return any(face_term in face_text for face_term in face_terms)
 

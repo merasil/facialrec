@@ -77,7 +77,7 @@ def bench_warm(
             bench_enforce,
             True,
         )
-    except ValueError as bench_err:
+    except Exception as bench_err:
         if not face_missing(bench_err):
             raise
         logging.warning(
@@ -137,13 +137,10 @@ def bench_one(
                 bench_enforce,
                 False,
             )
-        except ValueError as bench_err:
-            bench_time += perf_counter() - bench_start
-            if not face_missing(bench_err):
-                raise
-            continue
         except Exception as bench_err:
             bench_time += perf_counter() - bench_start
+            if face_missing(bench_err):
+                continue
             bench_errors += 1
             logging.debug("Benchmark input %d failed: %s", bench_pos, bench_err)
             continue

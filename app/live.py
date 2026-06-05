@@ -155,7 +155,7 @@ def live_run(live_args: Any, live_cfg: Any) -> int:
             live_enforce,
             True,
         )
-    except ValueError as live_err:
+    except Exception as live_err:
         if not face_missing(live_err):
             raise
         logging.warning("Warm-up image contains no detectable face: %s", live_warm)
@@ -223,13 +223,10 @@ def live_run(live_args: Any, live_cfg: Any) -> int:
                     live_enforce,
                     False,
                 )
-            except ValueError as live_err:
-                if not face_missing(live_err):
-                    logging.error("Face recognition failed: %s", live_err)
-                    continue
-                logging.debug("No face found")
-                continue
             except Exception as live_err:
+                if face_missing(live_err):
+                    logging.debug("No face found")
+                    continue
                 logging.error("Face recognition failed: %s", live_err)
                 continue
 

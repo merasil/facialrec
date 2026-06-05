@@ -89,7 +89,7 @@ def vram_run(vram_data: dict[str, Any]) -> dict[str, Any]:
                     bool(vram_data["enforce"]),
                     vram_pos == 0,
                 )
-            except ValueError as vram_err:
+            except Exception as vram_err:
                 if not face_missing(vram_err):
                     raise
                 pass

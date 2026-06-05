@@ -7,7 +7,7 @@ from unittest.mock import patch
 from app.benchmark import bench_one, bench_status
 from app.cli import cli_parser
 from app.config import cfg_get_bool, cfg_list, cfg_pick
-from app.face import face_result
+from app.face import face_missing, face_result
 from app.samples import sample_folder
 from app.table import tab_render
 
@@ -82,6 +82,13 @@ class CoreTests(unittest.TestCase):
         ]
         self.assertEqual(face_result(test_frames, "Alice"), (True, True, True))
         self.assertEqual(face_result(test_frames, "alice"), (True, True, False))
+
+    def test_face_missing(self):
+        test_err = UnboundLocalError(
+            "cannot access local variable 'boxes_np' where it is not associated"
+        )
+        self.assertTrue(face_missing(test_err))
+        self.assertFalse(face_missing(RuntimeError("CUDA out of memory")))
 
     @patch("app.benchmark.bench_warm")
     @patch("app.benchmark.med_iter")
