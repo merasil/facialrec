@@ -14,4 +14,4 @@ nvidia-ml-py
 ultralytics
 dlib
 facenet-pytorch
-missing mediapipe
+mediapipe
