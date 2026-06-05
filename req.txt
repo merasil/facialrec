@@ -12,6 +12,7 @@ gunicorn
 deepface
 nvidia-ml-py
 ultralytics
+dill
 dlib
 facenet-pytorch
 mediapipe

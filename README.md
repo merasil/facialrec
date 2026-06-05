@@ -201,6 +201,8 @@ starts. The table reports processed inputs, detections, correct and incorrect
 recognitions, unknown faces, errors, total time, and average time per input.
 Recognition percentage is calculated from detected inputs.
 Timing excludes model loading, warm-up, and video decoding.
+Every combination runs in a separate process so previously loaded TensorFlow
+and PyTorch models cannot distort later timing results.
 The `Status` column reports model setup failures such as missing optional
 packages or invalid detector names.
 

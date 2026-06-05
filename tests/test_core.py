@@ -1,10 +1,11 @@
 import configparser
 import os
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
 
-from app.benchmark import bench_one, bench_status
+from app.benchmark import bench_one, bench_spawn, bench_status
 from app.cli import cli_parser
 from app.config import cfg_get_bool, cfg_list, cfg_pick
 from app.face import face_missing, face_result
@@ -72,7 +73,7 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(cfg_pick("cli", "config"), "cli")
         self.assertEqual(cfg_list(None, "a, b"), ["a", "b"])
 
-    def test_face_log_level(self):
+    def test_face_log(self):
         self.assertEqual(os.environ["DEEPFACE_LOG_LEVEL"], "40")
 
     def test_face_result(self):
@@ -135,6 +136,18 @@ class CoreTests(unittest.TestCase):
             bench_status(ValueError("invalid model_name"), "yolov8"),
             "invalid detector; use yolov8n, yolov8m or yolov8l",
         )
+
+    @patch("app.benchmark.subprocess.run")
+    def test_bench_spawn(self, test_run):
+        test_run.return_value = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout='BENCH_JSON={"ok": true, "row": ["retinaface", "ok"]}\n',
+            stderr="",
+        )
+        test_row, test_status = bench_spawn({"detector": "retinaface"})
+        self.assertEqual(test_row, ["retinaface", "ok"])
+        self.assertEqual(test_status, "ok")
 
     def test_sample_folder(self):
         with tempfile.TemporaryDirectory() as test_root:

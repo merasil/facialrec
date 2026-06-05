@@ -1,12 +1,15 @@
 import itertools
+import json
 import logging
+import subprocess
+import sys
 from pathlib import Path
 from time import perf_counter
-from typing import Any
+from typing import Any, Optional
 
 from app.config import cfg_get, cfg_get_bool, cfg_list, cfg_pick
-from app.face import face_find, face_load, face_missing, face_result, face_tf
-from app.media import med_first, med_iter
+from app.face import face_find, face_load, face_missing, face_result
+from app.media import med_iter
 from app.table import tab_output, tab_render
 
 
@@ -54,6 +57,38 @@ def bench_status(bench_err: Exception, bench_detector: str) -> str:
     if not bench_text:
         return type(bench_err).__name__
     return bench_text[:120]
+
+
+def bench_spawn(bench_data: dict[str, Any]) -> tuple[Optional[list[str]], str]:
+    bench_root = Path(__file__).resolve().parent.parent
+    bench_cmd = [
+        sys.executable,
+        "-m",
+        "app.benchmark_worker",
+        json.dumps(bench_data),
+    ]
+    bench_proc = subprocess.run(
+        bench_cmd,
+        check=False,
+        capture_output=True,
+        text=True,
+        cwd=bench_root,
+    )
+    if bench_proc.returncode != 0:
+        bench_lines = bench_proc.stderr.strip().splitlines()
+        bench_error = (
+            bench_lines[-1] if bench_lines else f"worker exit {bench_proc.returncode}"
+        )
+        return None, bench_error
+
+    for bench_line in reversed(bench_proc.stdout.splitlines()):
+        if not bench_line.startswith("BENCH_JSON="):
+            continue
+        bench_result = json.loads(bench_line.removeprefix("BENCH_JSON="))
+        if bench_result["ok"]:
+            return bench_result["row"], "ok"
+        return None, bench_result["error"]
+    return None, "worker returned no result"
 
 
 def bench_warm(
@@ -228,8 +263,6 @@ def bench_run(bench_args: Any, bench_cfg: Any) -> int:
             f"Expected identity is not an exact database folder: {bench_args.bench_name}"
         )
 
-    face_tf()
-    bench_first = med_first(bench_args.bench_input)
     bench_rows = []
     bench_combos = itertools.product(
         bench_detectors,
@@ -237,25 +270,25 @@ def bench_run(bench_args: Any, bench_cfg: Any) -> int:
         bench_metrics,
     )
     for bench_detector, bench_recognizer, bench_metric in bench_combos:
-        try:
-            bench_row = bench_one(
-                bench_args.bench_input,
-                bench_args.bench_name,
-                bench_db,
-                bench_detector,
-                bench_recognizer,
-                bench_metric,
-                bench_align,
-                bench_enforce,
-                bench_first,
-            )
-        except Exception as bench_err:
-            logging.exception(
-                "Model combination failed: %s/%s/%s",
-                bench_detector,
-                bench_recognizer,
-                bench_metric,
-            )
+        logging.info(
+            "Benchmarking detector=%s recognizer=%s metric=%s",
+            bench_detector,
+            bench_recognizer,
+            bench_metric,
+        )
+        bench_data = {
+            "input": str(Path(bench_args.bench_input).resolve()),
+            "name": bench_args.bench_name,
+            "db": str(Path(bench_db).resolve()),
+            "detector": bench_detector,
+            "recognizer": bench_recognizer,
+            "metric": bench_metric,
+            "align": bench_align,
+            "enforce": bench_enforce,
+        }
+        bench_row, bench_error = bench_spawn(bench_data)
+        if bench_row is None:
+            bench_err = RuntimeError(bench_error)
             bench_row = [
                 bench_detector,
                 bench_recognizer,
@@ -272,7 +305,13 @@ def bench_run(bench_args: Any, bench_cfg: Any) -> int:
                 "0.00",
                 bench_status(bench_err, bench_detector),
             ]
-            logging.error("Combination error: %s", bench_err)
+            logging.error(
+                "Combination %s/%s/%s failed: %s",
+                bench_detector,
+                bench_recognizer,
+                bench_metric,
+                bench_error,
+            )
         bench_rows.append(bench_row)
 
     bench_table = tab_render(BENCH_HEADS, bench_rows)
