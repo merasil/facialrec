@@ -1,3 +1,4 @@
+import importlib
 import logging
 import os
 from pathlib import Path
@@ -11,6 +12,26 @@ os.environ.setdefault("DEEPFACE_LOG_LEVEL", str(logging.ERROR))
 
 class FaceError(RuntimeError):
     """Raised when the face pipeline cannot be initialized."""
+
+
+def face_torch_detector(face_detector: str) -> bool:
+    face_name = face_detector.lower()
+    return face_name.startswith("yolo") or face_name == "fastmtcnn"
+
+
+def face_prepare_detector(face_detector: str) -> None:
+    face_name = face_detector.lower()
+    try:
+        if face_name.startswith("yolo"):
+            face_module = importlib.import_module("ultralytics")
+            getattr(face_module, "YOLO")
+        elif face_name == "fastmtcnn":
+            face_module = importlib.import_module("facenet_pytorch")
+            getattr(face_module, "MTCNN")
+    except (AttributeError, ImportError) as face_err:
+        raise FaceError(
+            f"Cannot import backend for detector {face_detector}: {face_err}"
+        ) from face_err
 
 
 def face_api() -> Any:
@@ -36,19 +57,39 @@ def face_tf(face_gpu: int = 0) -> Any:
         tf.config.set_visible_devices(face_gpus[face_gpu], "GPU")
         tf.config.experimental.set_memory_growth(face_gpus[face_gpu], True)
     except RuntimeError as face_err:
+        try:
+            face_visible = tf.config.get_visible_devices("GPU")
+            face_growth = tf.config.experimental.get_memory_growth(
+                face_gpus[face_gpu]
+            )
+        except Exception:
+            face_visible = []
+            face_growth = False
+        if face_visible == [face_gpus[face_gpu]] and face_growth:
+            return tf
         raise FaceError(f"Cannot configure GPU: {face_err}") from face_err
     return tf
 
 
 def face_load(face_detector: str, face_recognizer: str) -> None:
-    face_deep = face_api()
-    face_deep.build_model(model_name=face_detector, task="face_detector")
-    face_deep.build_model(model_name=face_recognizer, task="facial_recognition")
+    if face_torch_detector(face_detector):
+        face_load_detector(face_detector)
+        face_tf()
+    else:
+        face_tf()
+        face_load_detector(face_detector)
+    face_load_recognizer(face_recognizer)
 
 
 def face_load_detector(face_detector: str) -> None:
+    face_prepare_detector(face_detector)
     face_deep = face_api()
     face_deep.build_model(model_name=face_detector, task="face_detector")
+
+
+def face_load_recognizer(face_recognizer: str) -> None:
+    face_deep = face_api()
+    face_deep.build_model(model_name=face_recognizer, task="facial_recognition")
 
 
 def face_threshold(face_recognizer: str, face_metric: str) -> float:

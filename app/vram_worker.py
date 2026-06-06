@@ -5,7 +5,15 @@ import threading
 from time import sleep
 from typing import Any, Optional
 
-from app.face import face_find, face_load, face_missing, face_tf
+from app.face import (
+    face_find,
+    face_load_detector,
+    face_load_recognizer,
+    face_missing,
+    face_prepare_detector,
+    face_torch_detector,
+    face_tf,
+)
 from app.media import med_first
 
 
@@ -59,12 +67,21 @@ def vram_run(vram_data: dict[str, Any]) -> dict[str, Any]:
     try:
         vram_stage("configure")
         os.environ["CUDA_VISIBLE_DEVICES"] = str(vram_gpu)
-        vram_tf = face_tf(0)
 
-        # DeepFace loads the detector first. This lets PyTorch-backed detectors
-        # initialize CUDA before the TensorFlow recognizer, as in live mode.
-        vram_stage("model loading")
-        face_load(vram_data["detector"], vram_data["recognizer"])
+        if face_torch_detector(vram_data["detector"]):
+            vram_stage("detector runtime import")
+            face_prepare_detector(vram_data["detector"])
+            vram_stage("detector loading")
+            face_load_detector(vram_data["detector"])
+            vram_stage("tensorflow configure")
+            vram_tf = face_tf(0)
+        else:
+            vram_stage("tensorflow configure")
+            vram_tf = face_tf(0)
+            vram_stage("detector loading")
+            face_load_detector(vram_data["detector"])
+        vram_stage("recognizer loading")
+        face_load_recognizer(vram_data["recognizer"])
         if not vram_tf.config.list_logical_devices("GPU"):
             raise RuntimeError("TensorFlow did not find a GPU")
         vram_tfbase = 0

@@ -3,7 +3,7 @@ from pathlib import Path
 from typing import Any
 
 from app.config import cfg_get, cfg_get_bool, cfg_get_float, cfg_get_int, cfg_pick
-from app.face import face_detect, face_load_detector, face_tf
+from app.face import face_detect, face_load_detector, face_tf, face_torch_detector
 from app.media import med_extract, med_record
 
 
@@ -74,8 +74,12 @@ def sample_run(sample_args: Any, sample_cfg: Any, sample_stamp: int) -> int:
 
     sample_filter = None
     if sample_face:
-        face_tf()
-        face_load_detector(sample_detector)
+        if face_torch_detector(sample_detector):
+            face_load_detector(sample_detector)
+            face_tf()
+        else:
+            face_tf()
+            face_load_detector(sample_detector)
 
         def sample_check(sample_frame: Any) -> bool:
             return face_detect(

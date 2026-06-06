@@ -1,15 +1,28 @@
 import configparser
+import json
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
+from io import StringIO
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from app.benchmark import bench_one, bench_spawn, bench_status
+from app.benchmark import bench_one, bench_spawn, bench_status, bench_warm
+from app.benchmark_worker import bench_diagnostics
 from app.cli import cli_parser
 from app.config import cfg_get_bool, cfg_list, cfg_pick
-from app.face import face_missing, face_result
+from app.face import (
+    FaceError,
+    face_load,
+    face_load_detector,
+    face_missing,
+    face_prepare_detector,
+    face_result,
+    face_tf,
+    face_torch_detector,
+)
 from app.samples import sample_folder
 from app.table import tab_render
 from app.vram import vram_worker
@@ -152,6 +165,242 @@ class CoreTests(unittest.TestCase):
         test_row, test_status = bench_spawn({"detector": "retinaface"})
         self.assertEqual(test_row, ["retinaface", "ok"])
         self.assertEqual(test_status, "ok")
+        test_cmd = test_run.call_args.args[0]
+        self.assertEqual(test_cmd[1:4], ["-X", "faulthandler", "-u"])
+        self.assertEqual(test_run.call_args.kwargs["stdout"], subprocess.PIPE)
+        self.assertNotIn("stderr", test_run.call_args.kwargs)
+
+    @patch("app.benchmark.subprocess.run")
+    def test_bench_sigkill(self, test_run):
+        test_run.return_value = subprocess.CompletedProcess(
+            args=[],
+            returncode=-9,
+            stdout="BENCH_STAGE=detector loading\n",
+            stderr="",
+        )
+
+        test_row, test_status = bench_spawn({"detector": "yolov8m"})
+
+        self.assertIsNone(test_row)
+        self.assertEqual(
+            test_status,
+            "worker killed by SIGKILL (possible RAM/VRAM OOM) "
+            "during detector loading",
+        )
+
+    @patch("app.benchmark.subprocess.run")
+    def test_bench_sigsegv(self, test_run):
+        test_run.return_value = subprocess.CompletedProcess(
+            args=[],
+            returncode=-11,
+            stdout="BENCH_STAGE=detector runtime import\n",
+            stderr="",
+        )
+
+        test_row, test_status = bench_spawn({"detector": "yolov8m"})
+
+        self.assertIsNone(test_row)
+        self.assertEqual(
+            test_status,
+            "worker killed by SIGSEGV during detector runtime import",
+        )
+
+    @patch("app.benchmark.face_find")
+    @patch("app.benchmark.face_load_recognizer")
+    @patch("app.benchmark.face_tf")
+    @patch("app.benchmark.face_load_detector")
+    @patch("app.benchmark.face_prepare_detector")
+    def test_bench_pytorch_order(
+        self,
+        test_prepare,
+        test_detector,
+        test_tf,
+        test_recognizer,
+        test_find,
+    ):
+        test_steps = []
+        test_prepare.side_effect = lambda *test_args: test_steps.append("prepare")
+        test_detector.side_effect = lambda *test_args: test_steps.append("detector")
+        test_tf.side_effect = lambda *test_args: test_steps.append("tensorflow")
+        test_recognizer.side_effect = (
+            lambda *test_args: test_steps.append("recognizer")
+        )
+
+        bench_warm(
+            "frame",
+            "db",
+            "yolov8m",
+            "Facenet512",
+            "euclidean_l2",
+            False,
+            True,
+        )
+
+        self.assertEqual(
+            test_steps,
+            ["prepare", "detector", "tensorflow", "recognizer"],
+        )
+        test_find.assert_called_once()
+
+    @patch("app.benchmark.face_find")
+    @patch("app.benchmark.face_load_recognizer")
+    @patch("app.benchmark.face_tf")
+    @patch("app.benchmark.face_load_detector")
+    @patch("app.benchmark.face_prepare_detector")
+    def test_bench_tensorflow_order(
+        self,
+        test_prepare,
+        test_detector,
+        test_tf,
+        test_recognizer,
+        test_find,
+    ):
+        test_steps = []
+        test_prepare.side_effect = lambda *test_args: test_steps.append("prepare")
+        test_detector.side_effect = lambda *test_args: test_steps.append("detector")
+        test_tf.side_effect = lambda *test_args: test_steps.append("tensorflow")
+        test_recognizer.side_effect = (
+            lambda *test_args: test_steps.append("recognizer")
+        )
+
+        bench_warm(
+            "frame",
+            "db",
+            "retinaface",
+            "Facenet512",
+            "euclidean_l2",
+            False,
+            True,
+        )
+
+        self.assertEqual(test_steps, ["tensorflow", "detector", "recognizer"])
+        test_prepare.assert_not_called()
+        test_find.assert_called_once()
+
+    def test_torch_detectors(self):
+        self.assertTrue(face_torch_detector("yolov8m"))
+        self.assertTrue(face_torch_detector("YOLOv11n"))
+        self.assertTrue(face_torch_detector("fastmtcnn"))
+        self.assertFalse(face_torch_detector("retinaface"))
+
+    @patch("app.face.importlib.import_module")
+    def test_prepare_detector(self, test_import):
+        test_import.return_value = SimpleNamespace(YOLO=object(), MTCNN=object())
+
+        face_prepare_detector("yolov8m")
+        test_import.assert_called_once_with("ultralytics")
+
+        test_import.reset_mock()
+        face_prepare_detector("fastmtcnn")
+        test_import.assert_called_once_with("facenet_pytorch")
+
+        test_import.reset_mock()
+        face_prepare_detector("retinaface")
+        test_import.assert_not_called()
+
+    def test_yolo_runtime_before_deepface(self):
+        test_steps = []
+
+        class TestUltralytics:
+            @property
+            def YOLO(self):
+                test_steps.append("ultralytics.YOLO")
+                return object()
+
+        with patch("app.face.face_api") as test_api:
+            with patch("app.face.importlib.import_module") as test_import:
+                test_import.side_effect = lambda test_name: (
+                    test_steps.append(test_name) or TestUltralytics()
+                )
+                test_api.side_effect = lambda: (
+                    test_steps.append("deepface")
+                    or SimpleNamespace(build_model=lambda **test_args: None)
+                )
+
+                face_load_detector("yolov8m")
+
+        self.assertEqual(
+            test_steps,
+            ["ultralytics", "ultralytics.YOLO", "deepface"],
+        )
+
+    @patch("app.face.face_load_recognizer")
+    @patch("app.face.face_tf")
+    @patch("app.face.face_load_detector")
+    def test_face_load_order(self, test_detector, test_tf, test_recognizer):
+        test_steps = []
+        test_detector.side_effect = lambda *test_args: test_steps.append("detector")
+        test_tf.side_effect = lambda *test_args: test_steps.append("tensorflow")
+        test_recognizer.side_effect = (
+            lambda *test_args: test_steps.append("recognizer")
+        )
+
+        face_load("yolov8m", "Facenet512")
+        self.assertEqual(test_steps, ["detector", "tensorflow", "recognizer"])
+
+        test_steps.clear()
+        face_load("retinaface", "Facenet512")
+        self.assertEqual(test_steps, ["tensorflow", "detector", "recognizer"])
+
+    def test_face_tf_already_configured(self):
+        test_gpu = object()
+        test_experimental = SimpleNamespace(
+            set_memory_growth=lambda *test_args: (_ for _ in ()).throw(
+                RuntimeError("Physical devices cannot be modified")
+            ),
+            get_memory_growth=lambda test_device: True,
+        )
+        test_config = SimpleNamespace(
+            list_physical_devices=lambda test_type: [test_gpu],
+            set_visible_devices=lambda *test_args: None,
+            get_visible_devices=lambda test_type: [test_gpu],
+            experimental=test_experimental,
+        )
+        test_tf = SimpleNamespace(config=test_config)
+
+        with patch.dict(sys.modules, {"tensorflow": test_tf}):
+            self.assertIs(face_tf(), test_tf)
+
+    def test_face_tf_rejects_wrong_configuration(self):
+        test_gpu = object()
+        test_other_gpu = object()
+        test_experimental = SimpleNamespace(
+            set_memory_growth=lambda *test_args: (_ for _ in ()).throw(
+                RuntimeError("Physical devices cannot be modified")
+            ),
+            get_memory_growth=lambda test_device: True,
+        )
+        test_config = SimpleNamespace(
+            list_physical_devices=lambda test_type: [test_gpu, test_other_gpu],
+            set_visible_devices=lambda *test_args: None,
+            get_visible_devices=lambda test_type: [test_other_gpu],
+            experimental=test_experimental,
+        )
+        test_tf = SimpleNamespace(config=test_config)
+
+        with patch.dict(sys.modules, {"tensorflow": test_tf}):
+            with self.assertRaises(FaceError):
+                face_tf()
+
+    @patch("app.benchmark_worker.importlib.metadata.version")
+    def test_bench_diagnostics(self, test_version):
+        test_version.side_effect = lambda test_name: f"{test_name}-version"
+        test_stderr = StringIO()
+
+        with patch("sys.stderr", test_stderr):
+            bench_diagnostics()
+
+        test_line = test_stderr.getvalue().strip()
+        self.assertTrue(test_line.startswith("BENCH_DIAG="))
+        test_data = json.loads(test_line.removeprefix("BENCH_DIAG="))
+        self.assertEqual(test_data["packages"]["deepface"], "deepface-version")
+        self.assertEqual(test_data["packages"]["torch"], "torch-version")
+        self.assertEqual(
+            test_data["packages"]["nvidia-cudnn-cu12"],
+            "nvidia-cudnn-cu12-version",
+        )
+        self.assertIn("python", test_data)
+        self.assertIn("platform", test_data)
 
     def test_sample_folder(self):
         with tempfile.TemporaryDirectory() as test_root:
@@ -166,16 +415,20 @@ class CoreTests(unittest.TestCase):
         self.assertIn("| x | 12 |", test_table)
 
     @patch("app.vram_worker.med_first", return_value="frame")
-    @patch("app.vram_worker.face_load")
+    @patch("app.vram_worker.face_load_recognizer")
+    @patch("app.vram_worker.face_load_detector")
     @patch("app.vram_worker.face_find")
     @patch("app.vram_worker.face_tf")
+    @patch("app.vram_worker.face_prepare_detector")
     @patch("app.vram_worker.vram_nvml", return_value=(None, None))
     def test_vram_warm(
         self,
         test_nvml,
+        test_prepare,
         test_tf,
         test_find,
-        test_load,
+        test_detector,
+        test_recognizer,
         test_first,
     ):
         test_order = []
@@ -185,12 +438,17 @@ class CoreTests(unittest.TestCase):
         )
         test_cfg = SimpleNamespace(
             experimental=test_exp,
-            list_logical_devices=lambda test_name: (
-                test_order.append("tensorflow") or [object()]
-            ),
+            list_logical_devices=lambda test_name: [object()],
         )
-        test_tf.return_value = SimpleNamespace(config=test_cfg)
-        test_load.side_effect = lambda *test_args: test_order.append("models")
+        test_prepare.side_effect = lambda *test_args: test_order.append("prepare")
+        test_tf.side_effect = lambda *test_args: (
+            test_order.append("tensorflow")
+            or SimpleNamespace(config=test_cfg)
+        )
+        test_detector.side_effect = lambda *test_args: test_order.append("detector")
+        test_recognizer.side_effect = (
+            lambda *test_args: test_order.append("recognizer")
+        )
         test_data = {
             "gpu": 0,
             "input": "input",
@@ -205,7 +463,10 @@ class CoreTests(unittest.TestCase):
 
         vram_run(test_data)
 
-        self.assertEqual(test_order, ["models", "tensorflow"])
+        self.assertEqual(
+            test_order,
+            ["prepare", "detector", "tensorflow", "recognizer"],
+        )
         self.assertEqual(test_find.call_count, 4)
         self.assertTrue(test_find.call_args_list[0].args[-1])
         for test_call in test_find.call_args_list[1:]:

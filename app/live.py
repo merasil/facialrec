@@ -7,7 +7,7 @@ from time import perf_counter, sleep
 from typing import Any
 
 from app.config import cfg_get, cfg_get_bool, cfg_get_float, cfg_get_int, cfg_pick
-from app.face import face_find, face_load, face_missing, face_tf, face_threshold
+from app.face import face_find, face_load, face_missing, face_threshold
 from include.functions import db_reset, door_open
 from lib.motionchecker import MotChecker
 from lib.streamreader import StrReader
@@ -136,13 +136,13 @@ def live_run(live_args: Any, live_cfg: Any) -> int:
         cfg_get_float(live_cfg, "motion", "background_alpha", 0.05),
     )
 
-    face_tf()
+    logging.info("Loading detector and recognition models")
+    face_load(live_detector, live_recognizer)
+
     live_data = live_db(live_dbpath)
     live_model_threshold = face_threshold(live_recognizer, live_metric)
     live_sure = live_model_threshold - (live_model_threshold * live_pretty)
 
-    logging.info("Loading detector and recognition models")
-    face_load(live_detector, live_recognizer)
     live_warm = next(iter(live_data.values()))["path"]
     try:
         face_find(

@@ -68,19 +68,16 @@ services:
       - ./db:/app/db
       - ./output:/app/output
       - ./weights:/root/.deepface/weights
-    # Request GPUs via CDI device names
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: cdi
-              device_ids:
-                - "nvidia.com/gpu=all"   # or "nvidia.com/gpu=0", "nvidia.com/gpu=1", ...
-              capabilities: ["gpu"]
+    # Direct CDI assignment also works with `docker compose run`
+    devices:
+      - "nvidia.com/gpu=all"   # or "nvidia.com/gpu=0", "nvidia.com/gpu=1", ...
     restart: unless-stopped
 ```
-Note: CDI devices in Compose require a recent Docker Engine (with CDI enabled).
-If your Compose implementation rejects driver: cdi, use Option B.
+Note: CDI devices in Compose require a recent Docker Engine with CDI enabled.
+If your Compose implementation rejects the CDI device name, use Option B.
+The direct service-level `devices` entry is inherited by one-off
+`docker compose run` containers. A `deploy.resources` reservation alone may be
+ignored for these containers by some Compose versions.
 
 ### Option B — **Compose with NVIDIA driver (works with CDI or legacy)**
 ```yaml
@@ -202,7 +199,18 @@ recognitions, unknown faces, errors, total time, and average time per input.
 Recognition percentage is calculated from detected inputs.
 Timing excludes model loading, warm-up, and video decoding.
 Every combination runs in a separate process so previously loaded TensorFlow
-and PyTorch models cannot distort later timing results.
+and PyTorch models cannot distort later timing results. A native crash or OOM
+kill only fails that combination, and the benchmark still writes the result
+table. Workers run with Python's faulthandler enabled. Their structured phase
+and result messages use stdout, while native diagnostics and a `BENCH_DIAG`
+line with Python, platform, CUDA environment, and package versions are written
+directly to stderr.
+PyTorch-backed detectors such as YOLO and FastMTCNN import their complete
+runtime before DeepFace can initialize TensorFlow. They then load the detector,
+configure TensorFlow, and load the recognizer. TensorFlow detectors such as
+RetinaFace configure TensorFlow before loading the detector and recognizer.
+If a worker is terminated, the status includes the signal and last phase.
+`SIGKILL` also includes a possible RAM/VRAM OOM hint.
 The `Status` column reports model setup failures such as missing optional
 packages or invalid detector names.
 
@@ -238,9 +246,20 @@ reserved memory. Values are reported in MiB.
 Model loading, datastore creation, and one full inference warm-up happen before
 peak measurement starts. This prevents missing DeepFace cache files from
 inflating one recognizer's result.
-PyTorch-backed detectors are initialized before the TensorFlow recognizer,
-matching DeepFace's loading order in live mode. If a worker exits natively, the
-status column reports its exit code and last completed phase.
+PyTorch-backed detectors are initialized before TensorFlow configures its GPU
+and before the TensorFlow recognizer is built. Live, benchmark, and VRAM modes
+use this same order. If a worker exits natively, the status column reports its
+exit code and the active phase, for example `detector loading` or
+`recognizer loading`.
+
+Stop the live service before GPU benchmarks. `docker compose run` starts an
+additional container:
+
+```bash
+docker compose stop facialrec
+docker compose run --rm facialrec python3 main.py benchmark ...
+docker compose start facialrec
+```
 
 ## 🔎 Verifications & Tips
 
