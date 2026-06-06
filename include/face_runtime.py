@@ -35,10 +35,10 @@ def face_prepare_detector(face_detector: str) -> None:
 
 def face_api() -> Any:
     try:
-        face_module = importlib.import_module("deepface")
-        return getattr(face_module, "DeepFace")
-    except (AttributeError, ImportError) as face_err:
-        raise FaceRuntimeError("DeepFace is not installed") from face_err
+        from deepface import DeepFace
+    except ImportError as face_err:
+        raise FaceRuntimeError(f"Cannot import DeepFace: {face_err}") from face_err
+    return DeepFace
 
 
 def face_tf(face_gpu: int = 0) -> Any:
