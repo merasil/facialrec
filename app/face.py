@@ -1,3 +1,4 @@
+import importlib
 import logging
 import os
 from pathlib import Path
@@ -16,6 +17,21 @@ class FaceError(RuntimeError):
 def face_torch_detector(face_detector: str) -> bool:
     face_name = face_detector.lower()
     return face_name.startswith("yolo") or face_name == "fastmtcnn"
+
+
+def face_prepare_detector(face_detector: str) -> None:
+    face_name = face_detector.lower()
+    try:
+        if face_name.startswith("yolo"):
+            face_module = importlib.import_module("ultralytics")
+            getattr(face_module, "YOLO")
+        elif face_name == "fastmtcnn":
+            face_module = importlib.import_module("facenet_pytorch")
+            getattr(face_module, "MTCNN")
+    except (AttributeError, ImportError) as face_err:
+        raise FaceError(
+            f"Cannot import backend for detector {face_detector}: {face_err}"
+        ) from face_err
 
 
 def face_api() -> Any:
@@ -66,6 +82,7 @@ def face_load(face_detector: str, face_recognizer: str) -> None:
 
 
 def face_load_detector(face_detector: str) -> None:
+    face_prepare_detector(face_detector)
     face_deep = face_api()
     face_deep.build_model(model_name=face_detector, task="face_detector")
 

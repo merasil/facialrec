@@ -13,7 +13,15 @@ from app.benchmark import bench_one, bench_spawn, bench_status, bench_warm
 from app.benchmark_worker import bench_diagnostics
 from app.cli import cli_parser
 from app.config import cfg_get_bool, cfg_list, cfg_pick
-from app.face import face_load, face_missing, face_result, face_tf, face_torch_detector
+from app.face import (
+    face_load,
+    face_load_detector,
+    face_missing,
+    face_prepare_detector,
+    face_result,
+    face_tf,
+    face_torch_detector,
+)
 from app.samples import sample_folder
 from app.table import tab_render
 
@@ -182,14 +190,17 @@ class CoreTests(unittest.TestCase):
     @patch("app.benchmark.face_load_recognizer")
     @patch("app.benchmark.face_tf")
     @patch("app.benchmark.face_load_detector")
+    @patch("app.benchmark.face_prepare_detector")
     def test_bench_load_order(
         self,
+        test_prepare,
         test_detector,
         test_tf,
         test_recognizer,
         test_find,
     ):
         test_steps = []
+        test_prepare.side_effect = lambda *test_args: test_steps.append("prepare")
         test_detector.side_effect = lambda *test_args: test_steps.append("detector")
         test_tf.side_effect = lambda *test_args: test_steps.append("tensorflow")
         test_recognizer.side_effect = (
@@ -210,6 +221,8 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(
             test_steps,
             [
+                "detector runtime import",
+                "prepare",
                 "detector loading",
                 "detector",
                 "tensorflow configure",
@@ -269,6 +282,35 @@ class CoreTests(unittest.TestCase):
         self.assertTrue(face_torch_detector("YOLOv11n"))
         self.assertTrue(face_torch_detector("fastmtcnn"))
         self.assertFalse(face_torch_detector("retinaface"))
+
+    @patch("app.face.importlib.import_module")
+    def test_prepare_detector(self, test_import):
+        test_import.return_value = SimpleNamespace(YOLO=object(), MTCNN=object())
+
+        face_prepare_detector("yolov8m")
+        test_import.assert_called_once_with("ultralytics")
+
+        test_import.reset_mock()
+        face_prepare_detector("fastmtcnn")
+        test_import.assert_called_once_with("facenet_pytorch")
+
+        test_import.reset_mock()
+        face_prepare_detector("retinaface")
+        test_import.assert_not_called()
+
+    @patch("app.face.face_api")
+    @patch("app.face.face_prepare_detector")
+    def test_detector_prepares_before_deepface(self, test_prepare, test_api):
+        test_steps = []
+        test_prepare.side_effect = lambda *test_args: test_steps.append("prepare")
+        test_api.side_effect = lambda: (
+            test_steps.append("deepface")
+            or SimpleNamespace(build_model=lambda **test_args: None)
+        )
+
+        face_load_detector("yolov8m")
+
+        self.assertEqual(test_steps, ["prepare", "deepface"])
 
     @patch("app.benchmark_worker.importlib.metadata.version")
     def test_bench_diagnostics(self, test_version):

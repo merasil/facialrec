@@ -14,6 +14,7 @@ from app.face import (
     face_load_detector,
     face_load_recognizer,
     face_missing,
+    face_prepare_detector,
     face_result,
     face_torch_detector,
     face_tf,
@@ -143,6 +144,9 @@ def bench_warm(
     bench_report: Optional[Callable[[str], None]] = None,
 ) -> None:
     if face_torch_detector(bench_detector):
+        if bench_report is not None:
+            bench_report("detector runtime import")
+        face_prepare_detector(bench_detector)
         if bench_report is not None:
             bench_report("detector loading")
         face_load_detector(bench_detector)

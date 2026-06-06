@@ -208,7 +208,9 @@ The worker enables Python's `faulthandler`, writes relevant package and CUDA
 runtime versions as `BENCH_DIAG`, and forwards native crash output directly to
 the terminal.
 PyTorch-backed detectors such as YOLO and FastMTCNN are loaded before
-TensorFlow. Other detectors such as RetinaFace configure TensorFlow first.
+TensorFlow. Their runtime module is imported before DeepFace because importing
+DeepFace itself initializes TensorFlow. Other detectors such as RetinaFace
+configure TensorFlow first.
 The `Status` column reports model setup failures such as missing optional
 packages or invalid detector names.
 
