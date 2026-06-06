@@ -36,6 +36,16 @@ def face_tf(face_gpu: int = 0) -> Any:
         tf.config.set_visible_devices(face_gpus[face_gpu], "GPU")
         tf.config.experimental.set_memory_growth(face_gpus[face_gpu], True)
     except RuntimeError as face_err:
+        try:
+            face_visible = tf.config.get_visible_devices("GPU")
+            face_growth = tf.config.experimental.get_memory_growth(
+                face_gpus[face_gpu]
+            )
+        except Exception:
+            face_visible = []
+            face_growth = False
+        if face_visible == [face_gpus[face_gpu]] and face_growth:
+            return tf
         raise FaceError(f"Cannot configure GPU: {face_err}") from face_err
     return tf
 

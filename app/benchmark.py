@@ -139,11 +139,11 @@ def bench_warm(
     bench_report: Optional[Callable[[str], None]] = None,
 ) -> None:
     if bench_report is not None:
-        bench_report("detector loading")
-    face_load_detector(bench_detector)
-    if bench_report is not None:
         bench_report("tensorflow configure")
     face_tf()
+    if bench_report is not None:
+        bench_report("detector loading")
+    face_load_detector(bench_detector)
     if bench_report is not None:
         bench_report("recognizer loading")
     face_load_recognizer(bench_recognizer)

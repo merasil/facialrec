@@ -1,14 +1,16 @@
 import configparser
 import os
 import subprocess
+import sys
 import tempfile
 import unittest
+from types import SimpleNamespace
 from unittest.mock import patch
 
 from app.benchmark import bench_one, bench_spawn, bench_status, bench_warm
 from app.cli import cli_parser
 from app.config import cfg_get_bool, cfg_list, cfg_pick
-from app.face import face_missing, face_result
+from app.face import face_missing, face_result, face_tf
 from app.samples import sample_folder
 from app.table import tab_render
 
@@ -201,16 +203,35 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(
             test_steps,
             [
-                "detector loading",
-                "detector",
                 "tensorflow configure",
                 "tensorflow",
+                "detector loading",
+                "detector",
                 "recognizer loading",
                 "recognizer",
                 "warm-up",
             ],
         )
         test_find.assert_called_once()
+
+    def test_face_tf_already_configured(self):
+        test_gpu = object()
+        test_experimental = SimpleNamespace(
+            set_memory_growth=lambda *test_args: (_ for _ in ()).throw(
+                RuntimeError("Physical devices cannot be modified")
+            ),
+            get_memory_growth=lambda test_device: True,
+        )
+        test_config = SimpleNamespace(
+            list_physical_devices=lambda test_type: [test_gpu],
+            set_visible_devices=lambda *test_args: None,
+            get_visible_devices=lambda test_type: [test_gpu],
+            experimental=test_experimental,
+        )
+        test_tf = SimpleNamespace(config=test_config)
+
+        with patch.dict(sys.modules, {"tensorflow": test_tf}):
+            self.assertIs(face_tf(), test_tf)
 
     def test_sample_folder(self):
         with tempfile.TemporaryDirectory() as test_root:
