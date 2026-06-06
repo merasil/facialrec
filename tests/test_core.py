@@ -6,6 +6,7 @@ import sys
 import tempfile
 import unittest
 from io import StringIO
+from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
@@ -92,6 +93,17 @@ class CoreTests(unittest.TestCase):
     def test_face_log(self):
         self.assertEqual(os.environ["DEEPFACE_LOG_LEVEL"], "40")
         self.assertEqual(os.environ["TF_CPP_MIN_LOG_LEVEL"], "2")
+
+    def test_detector_requirements(self):
+        test_root = Path(__file__).resolve().parent.parent
+        test_requirements = {
+            test_line.strip()
+            for test_line in (test_root / "req.txt").read_text().splitlines()
+            if test_line.strip()
+        }
+        self.assertTrue(
+            {"dlib", "facenet-pytorch", "mediapipe"}.issubset(test_requirements)
+        )
 
     def test_face_result(self):
         test_frames = [
