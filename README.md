@@ -204,15 +204,13 @@ Timing excludes model loading, warm-up, and video decoding.
 Every combination runs in a separate worker process. If a native library or
 the OOM killer terminates a worker, the benchmark still writes a result with
 the signal and the last completed loading phase in the `Status` column.
+The worker enables Python's `faulthandler`, writes relevant package and CUDA
+runtime versions as `BENCH_DIAG`, and forwards native crash output directly to
+the terminal.
 PyTorch-backed detectors such as YOLO and FastMTCNN are loaded before
 TensorFlow. Other detectors such as RetinaFace configure TensorFlow first.
 The `Status` column reports model setup failures such as missing optional
 packages or invalid detector names.
-
-The Docker build pins `torch==2.7.1` with `torchvision==0.22.1`.
-`facenet-pytorch==2.6.0` is installed without dependencies because its package
-metadata otherwise forces an older Torch stack that can crash when loaded in
-the same process as TensorFlow 2.21.
 
 Stop the live service before a GPU-heavy benchmark. `docker compose run`
 starts an additional container and does not stop an already running one:

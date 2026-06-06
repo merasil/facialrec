@@ -89,6 +89,9 @@ def bench_spawn(bench_data: dict[str, Any]) -> tuple[Optional[list[str]], str]:
     bench_root = Path(__file__).resolve().parent.parent
     bench_cmd = [
         sys.executable,
+        "-X",
+        "faulthandler",
+        "-u",
         "-m",
         "app.benchmark_worker",
         json.dumps(bench_data),
@@ -97,7 +100,7 @@ def bench_spawn(bench_data: dict[str, Any]) -> tuple[Optional[list[str]], str]:
         bench_proc = subprocess.run(
             bench_cmd,
             check=False,
-            capture_output=True,
+            stdout=subprocess.PIPE,
             text=True,
             cwd=bench_root,
         )

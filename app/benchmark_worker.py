@@ -1,4 +1,8 @@
+import faulthandler
+import importlib.metadata
 import json
+import os
+import platform
 import sys
 from typing import Any
 
@@ -8,6 +12,44 @@ from app.media import med_first
 
 def bench_stage(bench_name: str) -> None:
     print(f"BENCH_STAGE={bench_name}", flush=True)
+
+
+def bench_diagnostics() -> None:
+    bench_packages = {}
+    for bench_package in (
+        "deepface",
+        "facenet-pytorch",
+        "nvidia-cublas-cu12",
+        "nvidia-cuda-runtime-cu12",
+        "nvidia-cudnn-cu12",
+        "nvidia-nvjitlink-cu12",
+        "numpy",
+        "opencv-python",
+        "opencv-python-headless",
+        "tensorflow",
+        "tf-keras",
+        "torch",
+        "torchvision",
+        "triton",
+        "ultralytics",
+    ):
+        try:
+            bench_packages[bench_package] = importlib.metadata.version(bench_package)
+        except importlib.metadata.PackageNotFoundError:
+            bench_packages[bench_package] = "not installed"
+
+    bench_info = {
+        "python": sys.version.split()[0],
+        "platform": platform.platform(),
+        "packages": bench_packages,
+        "CUDA_VISIBLE_DEVICES": os.environ.get("CUDA_VISIBLE_DEVICES"),
+        "LD_LIBRARY_PATH": os.environ.get("LD_LIBRARY_PATH"),
+    }
+    print(
+        "BENCH_DIAG=" + json.dumps(bench_info, sort_keys=True),
+        file=sys.stderr,
+        flush=True,
+    )
 
 
 def bench_run(bench_data: dict[str, Any]) -> list[str]:
@@ -28,9 +70,11 @@ def bench_run(bench_data: dict[str, Any]) -> list[str]:
 
 
 def bench_main() -> int:
+    faulthandler.enable(all_threads=True)
     if len(sys.argv) != 2:
         print("Expected one JSON payload", file=sys.stderr)
         return 2
+    bench_diagnostics()
     try:
         bench_data = json.loads(sys.argv[1])
         bench_row = bench_run(bench_data)

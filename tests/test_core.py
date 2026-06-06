@@ -1,13 +1,16 @@
 import configparser
+import json
 import os
 import subprocess
 import sys
 import tempfile
 import unittest
+from io import StringIO
 from types import SimpleNamespace
 from unittest.mock import patch
 
 from app.benchmark import bench_one, bench_spawn, bench_status, bench_warm
+from app.benchmark_worker import bench_diagnostics
 from app.cli import cli_parser
 from app.config import cfg_get_bool, cfg_list, cfg_pick
 from app.face import face_load, face_missing, face_result, face_tf, face_torch_detector
@@ -153,6 +156,10 @@ class CoreTests(unittest.TestCase):
 
         self.assertEqual(test_row, ["yolov8m", "ok"])
         self.assertEqual(test_status, "ok")
+        test_cmd = test_run.call_args.args[0]
+        self.assertEqual(test_cmd[1:4], ["-X", "faulthandler", "-u"])
+        self.assertEqual(test_run.call_args.kwargs["stdout"], subprocess.PIPE)
+        self.assertNotIn("stderr", test_run.call_args.kwargs)
 
     @patch("app.benchmark.subprocess.run")
     def test_bench_worker_killed(self, test_run):
@@ -262,6 +269,20 @@ class CoreTests(unittest.TestCase):
         self.assertTrue(face_torch_detector("YOLOv11n"))
         self.assertTrue(face_torch_detector("fastmtcnn"))
         self.assertFalse(face_torch_detector("retinaface"))
+
+    @patch("app.benchmark_worker.importlib.metadata.version")
+    def test_bench_diagnostics(self, test_version):
+        test_version.side_effect = lambda test_name: f"{test_name}-version"
+        test_stderr = StringIO()
+
+        with patch("sys.stderr", test_stderr):
+            bench_diagnostics()
+
+        test_line = test_stderr.getvalue().strip()
+        self.assertTrue(test_line.startswith("BENCH_DIAG="))
+        test_data = json.loads(test_line.removeprefix("BENCH_DIAG="))
+        self.assertEqual(test_data["packages"]["torch"], "torch-version")
+        self.assertIn("python", test_data)
 
     @patch("app.face.face_load_recognizer")
     @patch("app.face.face_tf")
