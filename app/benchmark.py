@@ -1,12 +1,23 @@
 import itertools
+import json
 import logging
+import signal
+import subprocess
+import sys
 from pathlib import Path
 from time import perf_counter
-from typing import Any
+from typing import Any, Callable, Optional
 
 from app.config import cfg_get, cfg_get_bool, cfg_list, cfg_pick
-from app.face import face_find, face_load, face_missing, face_result, face_tf
-from app.media import med_first, med_iter
+from app.face import (
+    face_find,
+    face_load_detector,
+    face_load_recognizer,
+    face_missing,
+    face_result,
+    face_tf,
+)
+from app.media import med_iter
 from app.table import tab_output, tab_render
 
 
@@ -56,6 +67,67 @@ def bench_status(bench_err: Exception, bench_detector: str) -> str:
     return bench_text[:120]
 
 
+def bench_exit_status(bench_code: int, bench_stage: str) -> str:
+    if bench_code < 0:
+        bench_signal = -bench_code
+        try:
+            bench_name = signal.Signals(bench_signal).name
+        except ValueError:
+            bench_name = f"signal {bench_signal}"
+        bench_status_text = f"worker killed by {bench_name}"
+        if bench_name == "SIGKILL":
+            bench_status_text += " (likely RAM/VRAM OOM)"
+    else:
+        bench_status_text = f"worker exit {bench_code}"
+    if bench_stage:
+        bench_status_text += f" during {bench_stage}"
+    return bench_status_text
+
+
+def bench_spawn(bench_data: dict[str, Any]) -> tuple[Optional[list[str]], str]:
+    bench_root = Path(__file__).resolve().parent.parent
+    bench_cmd = [
+        sys.executable,
+        "-m",
+        "app.benchmark_worker",
+        json.dumps(bench_data),
+    ]
+    try:
+        bench_proc = subprocess.run(
+            bench_cmd,
+            check=False,
+            capture_output=True,
+            text=True,
+            cwd=bench_root,
+        )
+    except OSError as bench_err:
+        return None, f"worker could not start: {bench_err}"
+
+    bench_lines = bench_proc.stdout.splitlines()
+    for bench_line in reversed(bench_lines):
+        if not bench_line.startswith("BENCH_JSON="):
+            continue
+        try:
+            bench_result = json.loads(bench_line.removeprefix("BENCH_JSON="))
+        except json.JSONDecodeError as bench_err:
+            return None, f"invalid worker result: {bench_err}"
+        if bench_result.get("ok"):
+            return bench_result["row"], "ok"
+        return None, str(bench_result.get("error", "worker failed"))
+
+    bench_stage = next(
+        (
+            bench_line.removeprefix("BENCH_STAGE=").strip()
+            for bench_line in reversed(bench_lines)
+            if bench_line.startswith("BENCH_STAGE=")
+        ),
+        "",
+    )
+    if bench_proc.returncode != 0:
+        return None, bench_exit_status(bench_proc.returncode, bench_stage)
+    return None, "worker returned no result"
+
+
 def bench_warm(
     bench_image: Any,
     bench_db: str,
@@ -64,8 +136,19 @@ def bench_warm(
     bench_metric: str,
     bench_align: bool,
     bench_enforce: bool,
+    bench_report: Optional[Callable[[str], None]] = None,
 ) -> None:
-    face_load(bench_detector, bench_recognizer)
+    if bench_report is not None:
+        bench_report("detector loading")
+    face_load_detector(bench_detector)
+    if bench_report is not None:
+        bench_report("tensorflow configure")
+    face_tf()
+    if bench_report is not None:
+        bench_report("recognizer loading")
+    face_load_recognizer(bench_recognizer)
+    if bench_report is not None:
+        bench_report("warm-up")
     try:
         face_find(
             bench_image,
@@ -98,6 +181,7 @@ def bench_one(
     bench_align: bool,
     bench_enforce: bool,
     bench_first: Any,
+    bench_report: Optional[Callable[[str], None]] = None,
 ) -> list[str]:
     logging.info(
         "Benchmarking detector=%s recognizer=%s metric=%s",
@@ -113,6 +197,7 @@ def bench_one(
         bench_metric,
         bench_align,
         bench_enforce,
+        bench_report,
     )
 
     bench_total = 0
@@ -123,6 +208,8 @@ def bench_one(
     bench_errors = 0
     bench_time = 0.0
 
+    if bench_report is not None:
+        bench_report("measurement")
     for bench_pos, bench_image in med_iter(bench_input):
         bench_total += 1
         bench_start = perf_counter()
@@ -228,8 +315,6 @@ def bench_run(bench_args: Any, bench_cfg: Any) -> int:
             f"Expected identity is not an exact database folder: {bench_args.bench_name}"
         )
 
-    face_tf()
-    bench_first = med_first(bench_args.bench_input)
     bench_rows = []
     bench_combos = itertools.product(
         bench_detectors,
@@ -237,25 +322,25 @@ def bench_run(bench_args: Any, bench_cfg: Any) -> int:
         bench_metrics,
     )
     for bench_detector, bench_recognizer, bench_metric in bench_combos:
-        try:
-            bench_row = bench_one(
-                bench_args.bench_input,
-                bench_args.bench_name,
-                bench_db,
-                bench_detector,
-                bench_recognizer,
-                bench_metric,
-                bench_align,
-                bench_enforce,
-                bench_first,
-            )
-        except Exception as bench_err:
-            logging.exception(
-                "Model combination failed: %s/%s/%s",
-                bench_detector,
-                bench_recognizer,
-                bench_metric,
-            )
+        logging.info(
+            "Benchmarking detector=%s recognizer=%s metric=%s",
+            bench_detector,
+            bench_recognizer,
+            bench_metric,
+        )
+        bench_data = {
+            "input": str(Path(bench_args.bench_input).resolve()),
+            "name": bench_args.bench_name,
+            "db": str(Path(bench_db).resolve()),
+            "detector": bench_detector,
+            "recognizer": bench_recognizer,
+            "metric": bench_metric,
+            "align": bench_align,
+            "enforce": bench_enforce,
+        }
+        bench_row, bench_error = bench_spawn(bench_data)
+        if bench_row is None:
+            bench_err = RuntimeError(bench_error)
             bench_row = [
                 bench_detector,
                 bench_recognizer,
@@ -272,7 +357,13 @@ def bench_run(bench_args: Any, bench_cfg: Any) -> int:
                 "0.00",
                 bench_status(bench_err, bench_detector),
             ]
-            logging.error("Combination error: %s", bench_err)
+            logging.error(
+                "Combination %s/%s/%s failed: %s",
+                bench_detector,
+                bench_recognizer,
+                bench_metric,
+                bench_error,
+            )
         bench_rows.append(bench_row)
 
     bench_table = tab_render(BENCH_HEADS, bench_rows)

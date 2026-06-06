@@ -5,6 +5,7 @@ from typing import Any
 
 
 os.environ.setdefault("TF_USE_LEGACY_KERAS", "1")
+os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "2")
 os.environ.setdefault("DEEPFACE_LOG_LEVEL", str(logging.ERROR))
 
 
@@ -48,6 +49,11 @@ def face_load(face_detector: str, face_recognizer: str) -> None:
 def face_load_detector(face_detector: str) -> None:
     face_deep = face_api()
     face_deep.build_model(model_name=face_detector, task="face_detector")
+
+
+def face_load_recognizer(face_recognizer: str) -> None:
+    face_deep = face_api()
+    face_deep.build_model(model_name=face_recognizer, task="facial_recognition")
 
 
 def face_threshold(face_recognizer: str, face_metric: str) -> float:

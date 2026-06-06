@@ -201,8 +201,26 @@ starts. The table reports processed inputs, detections, correct and incorrect
 recognitions, unknown faces, errors, total time, and average time per input.
 Recognition percentage is calculated from detected inputs.
 Timing excludes model loading, warm-up, and video decoding.
+Every combination runs in a separate worker process. If a native library or
+the OOM killer terminates a worker, the benchmark still writes a result with
+the signal and the last completed loading phase in the `Status` column.
 The `Status` column reports model setup failures such as missing optional
 packages or invalid detector names.
+
+Stop the live service before a GPU-heavy benchmark. `docker compose run`
+starts an additional container and does not stop an already running one:
+
+```bash
+docker compose stop facialrec
+docker compose run --rm facialrec python3 main.py benchmark \
+  --name bastian \
+  --input /app/output/1780652321 \
+  --db /app/db \
+  --detectors yolov8m \
+  --recognizers Facenet \
+  --output /app/output/benchmark.txt
+docker compose start facialrec
+```
 
 Some DeepFace detectors require optional dependencies:
 

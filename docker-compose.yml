@@ -8,13 +8,7 @@ services:
       - ./db:/app/db
       - ./output:/app/output
       - ./weights:/root/.deepface/weights
-    # Use CDI devices instead of `gpus: all` to avoid legacy hook
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: cdi 
-              device_ids:
-                - "nvidia.com/gpu=all"
-              capabilities: ["gpu"]
+    # Direct CDI assignment is inherited by `docker compose run`.
+    devices:
+      - "nvidia.com/gpu=all"
     restart: unless-stopped

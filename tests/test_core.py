@@ -1,10 +1,11 @@
 import configparser
 import os
+import subprocess
 import tempfile
 import unittest
 from unittest.mock import patch
 
-from app.benchmark import bench_one, bench_status
+from app.benchmark import bench_one, bench_spawn, bench_status, bench_warm
 from app.cli import cli_parser
 from app.config import cfg_get_bool, cfg_list, cfg_pick
 from app.face import face_missing, face_result
@@ -74,6 +75,7 @@ class CoreTests(unittest.TestCase):
 
     def test_face_log_level(self):
         self.assertEqual(os.environ["DEEPFACE_LOG_LEVEL"], "40")
+        self.assertEqual(os.environ["TF_CPP_MIN_LOG_LEVEL"], "2")
 
     def test_face_result(self):
         test_frames = [
@@ -135,6 +137,80 @@ class CoreTests(unittest.TestCase):
             bench_status(ValueError("invalid model_name"), "yolov8"),
             "invalid detector; use yolov8n, yolov8m or yolov8l",
         )
+
+    @patch("app.benchmark.subprocess.run")
+    def test_bench_spawn(self, test_run):
+        test_run.return_value = subprocess.CompletedProcess(
+            args=[],
+            returncode=0,
+            stdout='BENCH_JSON={"ok": true, "row": ["yolov8m", "ok"]}\n',
+            stderr="",
+        )
+
+        test_row, test_status = bench_spawn({"detector": "yolov8m"})
+
+        self.assertEqual(test_row, ["yolov8m", "ok"])
+        self.assertEqual(test_status, "ok")
+
+    @patch("app.benchmark.subprocess.run")
+    def test_bench_worker_killed(self, test_run):
+        test_run.return_value = subprocess.CompletedProcess(
+            args=[],
+            returncode=-9,
+            stdout="BENCH_STAGE=detector loading\n",
+            stderr="",
+        )
+
+        test_row, test_status = bench_spawn({"detector": "yolov8m"})
+
+        self.assertIsNone(test_row)
+        self.assertEqual(
+            test_status,
+            "worker killed by SIGKILL (likely RAM/VRAM OOM) during detector loading",
+        )
+
+    @patch("app.benchmark.face_find")
+    @patch("app.benchmark.face_load_recognizer")
+    @patch("app.benchmark.face_tf")
+    @patch("app.benchmark.face_load_detector")
+    def test_bench_load_order(
+        self,
+        test_detector,
+        test_tf,
+        test_recognizer,
+        test_find,
+    ):
+        test_steps = []
+        test_detector.side_effect = lambda *test_args: test_steps.append("detector")
+        test_tf.side_effect = lambda *test_args: test_steps.append("tensorflow")
+        test_recognizer.side_effect = (
+            lambda *test_args: test_steps.append("recognizer")
+        )
+
+        bench_warm(
+            "frame",
+            "db",
+            "yolov8m",
+            "Facenet",
+            "euclidean_l2",
+            False,
+            True,
+            test_steps.append,
+        )
+
+        self.assertEqual(
+            test_steps,
+            [
+                "detector loading",
+                "detector",
+                "tensorflow configure",
+                "tensorflow",
+                "recognizer loading",
+                "recognizer",
+                "warm-up",
+            ],
+        )
+        test_find.assert_called_once()
 
     def test_sample_folder(self):
         with tempfile.TemporaryDirectory() as test_root:
