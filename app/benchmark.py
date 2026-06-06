@@ -15,6 +15,7 @@ from app.face import (
     face_load_recognizer,
     face_missing,
     face_result,
+    face_torch_detector,
     face_tf,
 )
 from app.media import med_iter
@@ -138,12 +139,20 @@ def bench_warm(
     bench_enforce: bool,
     bench_report: Optional[Callable[[str], None]] = None,
 ) -> None:
-    if bench_report is not None:
-        bench_report("tensorflow configure")
-    face_tf()
-    if bench_report is not None:
-        bench_report("detector loading")
-    face_load_detector(bench_detector)
+    if face_torch_detector(bench_detector):
+        if bench_report is not None:
+            bench_report("detector loading")
+        face_load_detector(bench_detector)
+        if bench_report is not None:
+            bench_report("tensorflow configure")
+        face_tf()
+    else:
+        if bench_report is not None:
+            bench_report("tensorflow configure")
+        face_tf()
+        if bench_report is not None:
+            bench_report("detector loading")
+        face_load_detector(bench_detector)
     if bench_report is not None:
         bench_report("recognizer loading")
     face_load_recognizer(bench_recognizer)

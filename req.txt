@@ -13,5 +13,4 @@ deepface
 nvidia-ml-py
 ultralytics
 dlib
-facenet-pytorch
 mediapipe

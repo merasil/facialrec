@@ -13,6 +13,11 @@ class FaceError(RuntimeError):
     """Raised when the face pipeline cannot be initialized."""
 
 
+def face_torch_detector(face_detector: str) -> bool:
+    face_name = face_detector.lower()
+    return face_name.startswith("yolo") or face_name == "fastmtcnn"
+
+
 def face_api() -> Any:
     try:
         from deepface import DeepFace
@@ -51,9 +56,13 @@ def face_tf(face_gpu: int = 0) -> Any:
 
 
 def face_load(face_detector: str, face_recognizer: str) -> None:
-    face_deep = face_api()
-    face_deep.build_model(model_name=face_detector, task="face_detector")
-    face_deep.build_model(model_name=face_recognizer, task="facial_recognition")
+    if face_torch_detector(face_detector):
+        face_load_detector(face_detector)
+        face_tf()
+    else:
+        face_tf()
+        face_load_detector(face_detector)
+    face_load_recognizer(face_recognizer)
 
 
 def face_load_detector(face_detector: str) -> None:

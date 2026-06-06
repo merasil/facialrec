@@ -10,7 +10,7 @@ from unittest.mock import patch
 from app.benchmark import bench_one, bench_spawn, bench_status, bench_warm
 from app.cli import cli_parser
 from app.config import cfg_get_bool, cfg_list, cfg_pick
-from app.face import face_missing, face_result, face_tf
+from app.face import face_load, face_missing, face_result, face_tf, face_torch_detector
 from app.samples import sample_folder
 from app.table import tab_render
 
@@ -203,6 +203,49 @@ class CoreTests(unittest.TestCase):
         self.assertEqual(
             test_steps,
             [
+                "detector loading",
+                "detector",
+                "tensorflow configure",
+                "tensorflow",
+                "recognizer loading",
+                "recognizer",
+                "warm-up",
+            ],
+        )
+        test_find.assert_called_once()
+
+    @patch("app.benchmark.face_find")
+    @patch("app.benchmark.face_load_recognizer")
+    @patch("app.benchmark.face_tf")
+    @patch("app.benchmark.face_load_detector")
+    def test_bench_tensorflow_detector_order(
+        self,
+        test_detector,
+        test_tf,
+        test_recognizer,
+        test_find,
+    ):
+        test_steps = []
+        test_detector.side_effect = lambda *test_args: test_steps.append("detector")
+        test_tf.side_effect = lambda *test_args: test_steps.append("tensorflow")
+        test_recognizer.side_effect = (
+            lambda *test_args: test_steps.append("recognizer")
+        )
+
+        bench_warm(
+            "frame",
+            "db",
+            "retinaface",
+            "Facenet512",
+            "euclidean_l2",
+            False,
+            True,
+            test_steps.append,
+        )
+
+        self.assertEqual(
+            test_steps,
+            [
                 "tensorflow configure",
                 "tensorflow",
                 "detector loading",
@@ -213,6 +256,30 @@ class CoreTests(unittest.TestCase):
             ],
         )
         test_find.assert_called_once()
+
+    def test_torch_detectors(self):
+        self.assertTrue(face_torch_detector("yolov8m"))
+        self.assertTrue(face_torch_detector("YOLOv11n"))
+        self.assertTrue(face_torch_detector("fastmtcnn"))
+        self.assertFalse(face_torch_detector("retinaface"))
+
+    @patch("app.face.face_load_recognizer")
+    @patch("app.face.face_tf")
+    @patch("app.face.face_load_detector")
+    def test_face_load_order(self, test_detector, test_tf, test_recognizer):
+        test_steps = []
+        test_detector.side_effect = lambda *test_args: test_steps.append("detector")
+        test_tf.side_effect = lambda *test_args: test_steps.append("tensorflow")
+        test_recognizer.side_effect = (
+            lambda *test_args: test_steps.append("recognizer")
+        )
+
+        face_load("yolov8m", "Facenet512")
+        self.assertEqual(test_steps, ["detector", "tensorflow", "recognizer"])
+
+        test_steps.clear()
+        face_load("retinaface", "Facenet512")
+        self.assertEqual(test_steps, ["tensorflow", "detector", "recognizer"])
 
     def test_face_tf_already_configured(self):
         test_gpu = object()

@@ -1,0 +1,6 @@
+tensorflow==2.21.0
+tf-keras==2.21.0
+torch==2.7.1
+torchvision==0.22.1
+numpy==1.26.4
+Pillow==10.2.0
