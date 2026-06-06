@@ -144,6 +144,20 @@ docker compose up -d --build
 ```
 On first start, DeepFace may download model weights into /root/.deepface/weights (mounted from ./weights).
 
+To use a YOLO detector, set its exact DeepFace backend name in
+`config/config.ini`, for example:
+
+```ini
+[face_recognition]
+detector_model = yolov8m
+```
+
+Rebuild the image after updating from a version without YOLO support so the
+`ultralytics` dependency is installed. PyTorch-backed YOLO detectors load their
+runtime before DeepFace can initialize TensorFlow. TensorFlow detectors such as
+RetinaFace keep the opposite order: TensorFlow configuration, detector, then
+recognizer.
+
 ## 🔎 Verifications & Tips
 
 - **Autostart**: Ensure the container exists and has a restart policy:

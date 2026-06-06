@@ -10,3 +10,5 @@ retina-face
 fire
 gunicorn
 deepface
+ultralytics
+facenet-pytorch

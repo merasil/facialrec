@@ -1,4 +1,3 @@
-from deepface import DeepFace
 from time import sleep, perf_counter
 from datetime import datetime
 import os
@@ -7,8 +6,8 @@ import sys
 import logging
 import threading
 import configparser
-import tensorflow as tf
 from include.functions import *
+from include.face_runtime import face_load
 from lib.streamreader import StreamReader
 from lib.motionchecker import MotionChecker
 
@@ -38,16 +37,6 @@ except ValueError as e:
 # Logging setup based on verbose level (level 4 enables DEBUG logging)
 log_level = logging.DEBUG if verbose >= 4 else logging.INFO
 logging.basicConfig(level=log_level, format='%(asctime)s %(levelname)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
-
-# GPU memory growth
-gpus = tf.config.experimental.list_physical_devices('GPU')
-if gpus:
-    try:
-        tf.config.experimental.set_memory_growth(gpus[0], True)
-    except RuntimeError as e:
-        logging.warning(f"Couldn't set memory growth: {e}")
-else:
-    logging.info("No GPU found, running on CPU")
 
 # Database setup
 path_db = config["database"]["path"]
@@ -115,14 +104,6 @@ except KeyError as e:
     logging.error(f"Missing required thresholds config: {e}")
     sys.exit(1)
 
-try:
-    threshold_model = DeepFace.verification.find_threshold(recognition_model, metric)
-    threshold_pretty_sure = threshold_model - (threshold_model * pretty_sure_factor)
-except Exception as e:
-    logging.error(f"Error calculating threshold for model '{recognition_model}' with metric '{metric}': {e}")
-    logging.error("Valid metrics are usually: cosine, euclidean, euclidean_l2")
-    sys.exit(1)
-
 # Motion detection setup
 try:
     use_internal_motion = str2bool(config.get("motion", "use_internal", fallback="False"))
@@ -177,8 +158,19 @@ motion.start()
 sleep(5)
 logging.info(f"Database: {db}")
 logging.info("Loading Model...")
-ddm = DeepFace.build_model(model_name=detector_model, task="face_detector")
-drm = DeepFace.build_model(model_name=recognition_model, task="facial_recognition")
+try:
+    DeepFace = face_load(detector_model, recognition_model)
+    threshold_model = DeepFace.verification.find_threshold(recognition_model, metric)
+    threshold_pretty_sure = threshold_model - (
+        threshold_model * pretty_sure_factor
+    )
+except Exception as e:
+    logging.error(
+        f"Error loading detector '{detector_model}' and recognition model "
+        f"'{recognition_model}': {e}"
+    )
+    logging.error("Valid metrics are usually: cosine, euclidean, euclidean_l2")
+    sys.exit(1)
 logging.info("Finished loading Model...")
 
 # Signal handler for graceful shutdown
