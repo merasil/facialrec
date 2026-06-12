@@ -6,7 +6,10 @@ ARG TORCHVISION_VERSION=0.26.0
 
 RUN apt-get update && \
     apt-get purge -y python3-blinker \
-    && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 \
+    && apt-get install -y --no-install-recommends \
+        libgl1 \
+        libglib2.0-0 \
+        python3-cairo \
     && rm -rf /var/lib/apt/lists/*
 
 RUN rm -f /etc/ld.so.conf.d/z-cuda-stubs.conf \
@@ -30,8 +33,9 @@ RUN pip3 install --no-cache-dir \
         "torch==${TORCH_VERSION}" \
         "torchvision==${TORCHVISION_VERSION}" \
  && pip3 install --no-cache-dir -r req.txt \
- && pip3 install --no-cache-dir "tf-keras==2.21.0" \
- && pip3 check
+ && pip3 install --no-cache-dir "tf-keras==2.21.0"
+
+RUN pip3 check
 
 #CMD ["bash"]   #DEBUG
 CMD ["python3", "main.py"]
