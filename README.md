@@ -72,6 +72,16 @@ docker compose up -d
 docker compose logs --tail=200 facialrec
 ```
 
+The diagnostic streams each framework step directly and stops a framework
+check after 300 seconds. Override that limit when investigating a slow first
+PTX compilation:
+
+```bash
+docker compose run --rm \
+  -e GPU_DIAGNOSTICS_TIMEOUT=900 \
+  facialrec python3 gpu_diagnostics.py
+```
+
 The RTX 5060 Ti has CUDA compute capability 12.0 (`sm_120`). The container pins
 the PyTorch CUDA 12.8 build so YOLO kernels support this Blackwell GPU. Do not
 add the current `facenet-pytorch` package to this image: it constrains PyTorch
