@@ -13,9 +13,18 @@ class FaceRuntimeError(RuntimeError):
     """Raised when the face runtime cannot be initialized."""
 
 
+def face_gpu_required() -> bool:
+    return os.environ.get("FACIALREC_REQUIRE_GPU", "0").lower() in {
+        "1",
+        "true",
+        "yes",
+        "on",
+    }
+
+
 def face_torch_detector(face_detector: str) -> bool:
     face_name = face_detector.lower()
-    return face_name.startswith("yolo") or face_name == "fastmtcnn"
+    return face_name.startswith("yolo")
 
 
 def face_prepare_detector(face_detector: str) -> None:
@@ -24,9 +33,6 @@ def face_prepare_detector(face_detector: str) -> None:
         if face_name.startswith("yolo"):
             face_module = importlib.import_module("ultralytics")
             getattr(face_module, "YOLO")
-        elif face_name == "fastmtcnn":
-            face_module = importlib.import_module("facenet_pytorch")
-            getattr(face_module, "MTCNN")
     except (AttributeError, ImportError) as face_err:
         raise FaceRuntimeError(
             f"Cannot import backend for detector {face_detector}: {face_err}"
@@ -49,6 +55,12 @@ def face_tf(face_gpu: int = 0) -> Any:
 
     face_gpus = face_tf_module.config.list_physical_devices("GPU")
     if not face_gpus:
+        if face_gpu_required():
+            raise FaceRuntimeError(
+                "TensorFlow cannot see an NVIDIA GPU. Run "
+                "'docker compose run --rm facialrec python3 gpu_diagnostics.py' "
+                "and regenerate the host CDI specification after a GPU change."
+            )
         return face_tf_module
     if face_gpu < 0 or face_gpu >= len(face_gpus):
         raise FaceRuntimeError(f"GPU index {face_gpu} is not available")
@@ -73,6 +85,13 @@ def face_tf(face_gpu: int = 0) -> Any:
 
 
 def face_load(face_detector: str, face_recognizer: str) -> Any:
+    if face_detector.lower() == "fastmtcnn":
+        raise FaceRuntimeError(
+            "FastMTCNN is not bundled because facenet-pytorch requires an old "
+            "PyTorch build without RTX 50-series support. Use retinaface, mtcnn, "
+            "or a YOLO detector."
+        )
+
     if face_torch_detector(face_detector):
         face_prepare_detector(face_detector)
         face_deep = face_api()

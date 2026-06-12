@@ -1,5 +1,9 @@
 FROM tensorflow/tensorflow:2.21.0-gpu
 
+ARG PYTORCH_INDEX_URL=https://download.pytorch.org/whl/cu128
+ARG TORCH_VERSION=2.11.0
+ARG TORCHVISION_VERSION=0.26.0
+
 RUN apt-get update && \
     apt-get purge -y python3-blinker \
     && apt-get install -y --no-install-recommends libgl1 libglib2.0-0 \
@@ -15,14 +19,19 @@ WORKDIR /app
 
 COPY req.txt    /app
 COPY main.py    /app
+COPY gpu_diagnostics.py /app
 COPY include/   /app/include
 COPY lib/       /app/lib
 COPY db/        /app/db
 COPY weights/   /root/.deepface/weights
 
-RUN pip3 install --no-cache-dir -r req.txt
-RUN pip3 install --upgrade "tensorflow[and-cuda]==2.21.0"
-RUN pip3 install tf-keras==2.21.0
+RUN pip3 install --no-cache-dir \
+        --index-url "${PYTORCH_INDEX_URL}" \
+        "torch==${TORCH_VERSION}" \
+        "torchvision==${TORCHVISION_VERSION}" \
+ && pip3 install --no-cache-dir -r req.txt \
+ && pip3 install --no-cache-dir "tf-keras==2.21.0" \
+ && pip3 check
 
 #CMD ["bash"]   #DEBUG
 CMD ["python3", "main.py"]

@@ -11,4 +11,3 @@ fire
 gunicorn
 deepface
 ultralytics
-facenet-pytorch

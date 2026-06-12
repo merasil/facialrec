@@ -29,27 +29,54 @@ It’s tested on Linux with NVIDIA GPUs and Docker Engine + Docker Compose.
 
 ## 🧰 Install & Configure NVIDIA Container Toolkit (CDI mode)
 
-> The steps below switch the toolkit to **CDI** and are **reboot-safe**.  
-> You only need to regenerate the CDI spec after **driver/MIG changes**.
+> NVIDIA Container Toolkit 1.18 and newer maintain the CDI specification with
+> `nvidia-cdi-refresh`.
 
 ### Arch Linux (quick path)
 ```bash
 # 1) Install toolkit (driver/utils should already be present)
 sudo pacman -S --needed nvidia-container-toolkit
 
-# 2) Enable CDI in Docker and restart Docker
-sudo nvidia-ctk runtime configure --runtime=docker --cdi.enabled
+# 2) Configure Docker and enable automatic CDI refresh
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl enable --now nvidia-cdi-refresh.path
+sudo systemctl restart nvidia-cdi-refresh.service
 sudo systemctl restart docker
 
-# 3) Force the NVIDIA runtime into CDI mode
-sudo nvidia-ctk config --in-place --set nvidia-container-runtime.mode=cdi
-
-# 4) Generate the CDI spec (persistent)
-sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
-
-# 5) Smoke test (should print your GPUs)
+# 3) Verify CDI and the container GPU
+nvidia-ctk --debug cdi list
 docker run --rm --device nvidia.com/gpu=all ubuntu:22.04 nvidia-smi -L
 ```
+
+### After replacing a GPU
+
+CDI specifications contain device information from the installed GPU. Refresh
+them before restarting this service. If an older setup created
+`/etc/cdi/nvidia.yaml`, disable it so it cannot conflict with the automatically
+managed `/var/run/cdi/nvidia.yaml`. Also remove an old
+`ExecStartPre=...nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml` line
+from `systemctl edit docker.service` if it was added using an earlier version of
+this guide.
+
+```bash
+docker compose down
+[ ! -f /etc/cdi/nvidia.yaml ] || sudo mv /etc/cdi/nvidia.yaml /etc/cdi/nvidia.yaml.disabled
+sudo systemctl restart nvidia-cdi-refresh.service
+sudo systemctl restart docker
+
+nvidia-ctk --debug cdi list
+docker run --rm --device nvidia.com/gpu=all ubuntu:24.04 nvidia-smi
+docker compose build --pull --no-cache
+docker compose run --rm facialrec python3 gpu_diagnostics.py
+docker compose up -d
+docker compose logs --tail=200 facialrec
+```
+
+The RTX 5060 Ti has CUDA compute capability 12.0 (`sm_120`). The container pins
+the PyTorch CUDA 12.8 build so YOLO kernels support this Blackwell GPU. Do not
+add the current `facenet-pytorch` package to this image: it constrains PyTorch
+to 2.3 or older, which predates RTX 50-series support. The `fastmtcnn` detector
+is therefore not available in this Blackwell-compatible image.
 
 ## 🧪 Quickstart (Compose)
 
@@ -121,13 +148,12 @@ Insert the snippet below, save, and exit (this creates a drop-in under
 ```ini
 [Unit]
 # Start Docker only after NVIDIA persistence and udev have settled
-After=network-online.target nss-lookup.target docker.socket firewalld.service containerd.service time-set.target nvidia-persistenced.service systemd-udev-settle.service
-Wants=network-online.target containerd.service nvidia-persistenced.service
+After=network-online.target nss-lookup.target docker.socket firewalld.service containerd.service time-set.target nvidia-persistenced.service nvidia-cdi-refresh.service systemd-udev-settle.service
+Wants=network-online.target containerd.service nvidia-persistenced.service nvidia-cdi-refresh.service
 
 # Optional but more robust
 [Service]
-# Ensure CDI spec exists (idempotent) and wait for device nodes
-ExecStartPre=/usr/bin/nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
+# Wait for device nodes; nvidia-cdi-refresh manages the CDI specification
 ExecStartPre=/usr/bin/bash -c 'for i in {1..20}; do [ -e /dev/nvidia0 ] && [ -e /dev/nvidia-uvm ] && break; sleep 1; done; [ -e /dev/nvidia0 ] && [ -e /dev/nvidia-uvm ]'
 ```
 Reload and restart Docker:
@@ -165,9 +191,10 @@ recognizer.
   docker compose ps
   docker inspect -f '{{.HostConfig.RestartPolicy.Name}}' $(docker compose ps -q facialrec)
   ```
-- **Regenerate CDI spec after driver updates/MIG changes:**
+- **Regenerate CDI spec after driver updates, MIG changes, or replacing a GPU:**
   ```bash
-  sudo nvidia-ctk cdi generate --output=/etc/cdi/nvidia.yaml
+  sudo systemctl restart nvidia-cdi-refresh.service
+  nvidia-ctk --debug cdi list
   ```
 - **Select specific GPUs:**
   - CDI: set ```device_ids``` to ```"nvidia.com/gpu=0"```, ```"nvidia.com/gpu=1"```, …
@@ -184,6 +211,16 @@ Either keep specs in default locations (```/etc/cdi```, ```/var/run/cdi```) supp
 
 - **Legacy hook crash**: `nvidia-container-cli: ldcache error ... ldconfig ...`  
   **Fix**: Ensure CDI is enabled + generate the CDI spec, then use CDI devices in Compose (Option A).
+
+- **PyTorch error**: `sm_120 is not compatible` or `no kernel image is available`
+  **Fix**: Rebuild without cache so the CUDA 12.8 PyTorch wheels are installed:
+  `docker compose build --pull --no-cache`.
+
+- **TensorFlow reports no GPU**: Run
+  `docker compose run --rm facialrec python3 gpu_diagnostics.py`. If
+  `nvidia-smi` fails there, repair CDI/container-toolkit access first. If only
+  TensorFlow or PyTorch fails, rebuild the image without cache and inspect the
+  framework versions printed by the diagnostic.
 
 ## 📂 Project volumes
 
