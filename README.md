@@ -299,6 +299,50 @@ nvidia-ctk --debug cdi list
 The exact refresh command depends on the host operating system and NVIDIA
 Container Toolkit installation.
 
+### GPU container fails after a host reboot
+
+On some systemd-based hosts, Docker may start before the NVIDIA device nodes,
+persistence service, or CDI specification are ready. Containers using
+`restart: unless-stopped` can then fail during automatic startup even though a
+manual restart works later.
+
+First enable the NVIDIA persistence and CDI refresh services when they are
+available on the host:
+
+```bash
+sudo systemctl enable --now nvidia-persistenced.service
+sudo systemctl enable --now nvidia-cdi-refresh.path
+sudo systemctl restart nvidia-cdi-refresh.service
+```
+
+If the race condition remains, add an optional Docker service override:
+
+```bash
+sudo systemctl edit docker.service
+```
+
+```ini
+[Unit]
+After=nvidia-persistenced.service nvidia-cdi-refresh.service systemd-udev-settle.service
+Wants=nvidia-persistenced.service nvidia-cdi-refresh.service
+
+[Service]
+ExecStartPre=/usr/bin/bash -c 'for i in {1..20}; do [ -e /dev/nvidia0 ] && [ -e /dev/nvidia-uvm ] && exit 0; sleep 1; done; exit 1'
+```
+
+Reload systemd and restart Docker:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart docker
+```
+
+This configuration delays Docker until the NVIDIA services are active and the
+required device nodes exist. Service names and device paths can differ between
+distributions, driver packages, rootless Docker installations, and systems
+using MIG. Inspect the available units and devices before applying the
+override.
+
 ### RTSP check fails
 
 Verify the configured URL, credentials, network access, and camera stream. The
