@@ -1,0 +1,19 @@
+services:
+  facialrec:
+    command: ["python3", "test.py", "--base", "--gpu", "--start"]
+    environment:
+      FACIALREC_REQUIRE_GPU: "1"
+      NVIDIA_DRIVER_CAPABILITIES: compute,utility
+      CUDA_CACHE_PATH: /var/cache/nvidia/ComputeCache
+      CUDA_CACHE_MAXSIZE: "2147483648"
+    volumes:
+      - ./cuda-cache:/var/cache/nvidia/ComputeCache
+    # Use CDI devices instead of `gpus: all` to avoid the legacy NVIDIA hook.
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: cdi
+              device_ids:
+                - "nvidia.com/gpu=all"
+              capabilities: ["gpu"]

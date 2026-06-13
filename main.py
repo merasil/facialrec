@@ -13,7 +13,7 @@ from lib.motionchecker import MotionChecker
 
 # Read config file first to get verbose setting
 config = configparser.ConfigParser()
-config_path = "./config/config.ini"
+config_path = os.environ.get("FACIALREC_CONFIG", "./config/config.ini")
 
 if not os.path.exists(config_path):
     print(f"ERROR: Config file not found at {config_path}", file=sys.stderr)
@@ -36,7 +36,12 @@ except ValueError as e:
 
 # Logging setup based on verbose level (level 4 enables DEBUG logging)
 log_level = logging.DEBUG if verbose >= 4 else logging.INFO
-logging.basicConfig(level=log_level, format='%(asctime)s %(levelname)s: %(message)s', datefmt='%Y-%m-%d %H:%M:%S')
+logging.basicConfig(
+    level=log_level,
+    format="%(asctime)s %(levelname)s: %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S",
+    force=True,
+)
 
 # Database setup
 path_db = config["database"]["path"]

@@ -58,9 +58,12 @@ def face_tf(face_gpu: int = 0) -> Any:
         if face_gpu_required():
             raise FaceRuntimeError(
                 "TensorFlow cannot see an NVIDIA GPU. Run "
-                "'docker compose run --rm facialrec python3 gpu_diagnostics.py' "
+                "'docker compose -f docker-compose.yml "
+                "-f docker-compose.gpu.yml run --rm facialrec "
+                "python3 test.py --gpu' "
                 "and regenerate the host CDI specification after a GPU change."
             )
+        logging.info("No GPU available; using the CPU for face recognition")
         return face_tf_module
     if face_gpu < 0 or face_gpu >= len(face_gpus):
         raise FaceRuntimeError(f"GPU index {face_gpu} is not available")
@@ -81,6 +84,7 @@ def face_tf(face_gpu: int = 0) -> Any:
         if face_visible == [face_device] and face_growth:
             return face_tf_module
         raise FaceRuntimeError(f"Cannot configure GPU: {face_err}") from face_err
+    logging.info("Using TensorFlow GPU %d: %s", face_gpu, face_device.name)
     return face_tf_module
 
 

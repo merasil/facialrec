@@ -1,13 +1,14 @@
-# FacialRec (GPU-accelerated) – Docker Compose Setup
+# FacialRec - Docker Compose Setup
 
-This repository runs a GPU-accelerated face recognition service with Docker.
-It’s tested on Linux with NVIDIA GPUs and Docker Engine + Docker Compose.
+This repository runs a face recognition service with Docker. CPU operation is
+the default; NVIDIA GPU acceleration is optional.
 
 ---
 
 ## ✨ Features
 
-- GPU acceleration via NVIDIA Container Toolkit (CDI)
+- CPU operation without NVIDIA host dependencies
+- Optional GPU acceleration via NVIDIA Container Toolkit (CDI)
 - Docker Compose service: `facialrec`
 - RTSP over TCP for OpenCV (`OPENCV_FFMPEG_CAPTURE_OPTIONS=rtsp_transport;tcp`)
 - Persistent volumes for config, DB, and DeepFace weights
@@ -16,14 +17,93 @@ It’s tested on Linux with NVIDIA GPUs and Docker Engine + Docker Compose.
 
 ## ☑️ Requirements
 
-- **NVIDIA GPU + Driver** installed on the host
-- **Docker Engine** (v25+ recommended)
+- **Docker Engine**
 - **Docker Compose** (V2)
-- **NVIDIA Container Toolkit** (`nvidia-container-toolkit`)
 
-> **Why CDI (Container Device Interface)?**  
-> CDI avoids the legacy *prestart hook* that can crash with errors like  
-> `nvidia-container-cli: ldcache error ... ldconfig ...` and is the recommended path going forward.
+GPU acceleration additionally requires an NVIDIA GPU and driver, a recent
+Docker Engine with CDI support, and `nvidia-container-toolkit`.
+
+---
+
+## Run on CPU
+
+The base Compose file does not request a GPU:
+
+```bash
+docker compose up -d --build
+```
+
+At container startup, `test.py --base` runs before `main.py`. The service only
+starts when the config, database images, configured RTSP streams, motion source,
+detector, recognizer, and distance metric pass the preflight.
+
+The CUDA-capable TensorFlow and PyTorch packages in the image fall back to CPU
+execution when no GPU is exposed. For better CPU performance, start with a
+lighter detector such as `opencv` or `ssd`:
+
+```ini
+[face_recognition]
+detector_model = opencv
+```
+
+RetinaFace and YOLO can also run on the CPU, but may be significantly slower.
+
+## Run with an NVIDIA GPU
+
+The GPU override requests all GPUs through CDI and runs `--base --gpu` before
+starting the service:
+
+```bash
+docker compose \
+  -f docker-compose.yml \
+  -f docker-compose.gpu.yml \
+  up -d --build
+```
+
+If no GPU is available in this mode, startup fails instead of silently falling
+back to the CPU. Use the same file combination for `down`, `run`, and `logs`.
+
+## Runtime tests
+
+All runtime checks are available through `test.py`. Run them in the active
+container with Compose:
+
+```bash
+docker compose exec facialrec python3 test.py --base
+docker compose exec facialrec python3 test.py --gpu
+docker compose exec facialrec python3 test.py --motion
+docker compose exec facialrec python3 test.py --base --gpu --motion
+```
+
+If the normal service cannot stay up because its startup preflight fails, run
+the test in a one-off container instead:
+
+```bash
+docker compose run --rm facialrec python3 test.py --base
+```
+
+The equivalent plain Docker form is:
+
+```bash
+docker exec <container-name> python3 test.py --gpu --motion
+```
+
+Available checks:
+
+- `--base`: config schema and ranges, database images, main and optional
+  low-resolution RTSP streams, configured internal or external motion source,
+  face detector, recognition model, distance metric, and one sample inference
+  on a database image
+- `--gpu`: `nvidia-smi`, TensorFlow GPU discovery and operation, and PyTorch
+  CUDA discovery and operation
+- `--motion`: exercises internal motion processing or polls the external motion
+  endpoint for ten seconds
+- `--all`: runs all checks
+- `--start`: starts `main.py` after all selected checks pass
+
+Useful timeout options are `--timeout`, `--gpu-timeout`, and
+`--motion-duration`. Running `python3 test.py` without a check option defaults
+to `--base`.
 
 ---
 
@@ -59,17 +139,17 @@ from `systemctl edit docker.service` if it was added using an earlier version of
 this guide.
 
 ```bash
-docker compose down
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml down
 [ ! -f /etc/cdi/nvidia.yaml ] || sudo mv /etc/cdi/nvidia.yaml /etc/cdi/nvidia.yaml.disabled
 sudo systemctl restart nvidia-cdi-refresh.service
 sudo systemctl restart docker
 
 nvidia-ctk --debug cdi list
 docker run --rm --device nvidia.com/gpu=all ubuntu:24.04 nvidia-smi
-docker compose build --pull --no-cache
-docker compose run --rm facialrec python3 gpu_diagnostics.py
-docker compose up -d
-docker compose logs --tail=200 facialrec
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml build --pull --no-cache
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml run --rm facialrec python3 test.py --gpu
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml up -d
+docker compose -f docker-compose.yml -f docker-compose.gpu.yml logs --tail=200 facialrec
 ```
 
 The diagnostic streams each framework step directly and stops a framework
@@ -77,9 +157,12 @@ check after 300 seconds. Override that limit when investigating a slow first
 PTX compilation:
 
 ```bash
-docker compose run --rm \
+docker compose \
+  -f docker-compose.yml \
+  -f docker-compose.gpu.yml \
+  run --rm \
   -e GPU_DIAGNOSTICS_TIMEOUT=900 \
-  facialrec python3 gpu_diagnostics.py
+  facialrec python3 test.py --gpu
 ```
 
 The RTX 5060 Ti has CUDA compute capability 12.0 (`sm_120`). The container pins
@@ -87,58 +170,6 @@ the PyTorch CUDA 12.8 build so YOLO kernels support this Blackwell GPU. Do not
 add the current `facenet-pytorch` package to this image: it constrains PyTorch
 to 2.3 or older, which predates RTX 50-series support. The `fastmtcnn` detector
 is therefore not available in this Blackwell-compatible image.
-
-## 🧪 Quickstart (Compose)
-
-### Option A — **CDI devices (recommended)**
-This avoids the legacy hook entirely.
-
-```yaml
-services:
-  facialrec:
-    build: .
-    environment:
-      - OPENCV_FFMPEG_CAPTURE_OPTIONS=rtsp_transport;tcp
-    volumes:
-      - ./config:/app/config
-      - ./db:/app/db
-      - ./weights:/root/.deepface/weights
-    # Request GPUs via CDI device names
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: cdi
-              device_ids:
-                - "nvidia.com/gpu=all"   # or "nvidia.com/gpu=0", "nvidia.com/gpu=1", ...
-              capabilities: ["gpu"]
-    restart: unless-stopped
-```
-Note: CDI devices in Compose require a recent Docker Engine (with CDI enabled).
-If your Compose implementation rejects driver: cdi, use Option B.
-
-### Option B — **Compose with NVIDIA driver (works with CDI or legacy)**
-```yaml
-services:
-  facialrec:
-    build: .
-    environment:
-      - OPENCV_FFMPEG_CAPTURE_OPTIONS=rtsp_transport;tcp
-    volumes:
-      - ./config:/app/config
-      - ./db:/app/db
-      - ./weights:/root/.deepface/weights
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: nvidia
-              count: all            # or set a number; or use device_ids: ['0','3']
-              capabilities: [gpu]
-    restart: unless-stopped
-```
-Caveat: Using the --gpus path may still engage the legacy hook on some setups.
-If you ever see legacy-hook errors, prefer Option A (CDI devices).
 
 ## 🧷 Boot-safe autostart (fix race conditions)
 
@@ -173,12 +204,8 @@ sudo systemctl restart docker
 ```
 Result: When the host reboots, Docker starts only after NVIDIA is ready; containers with restart: unless-stopped then come up automatically.
 
-## ▶️ Run
-
-```bash
-docker compose up -d --build
-```
-On first start, DeepFace may download model weights into /root/.deepface/weights (mounted from ./weights).
+On first start, DeepFace may download model weights into
+`/root/.deepface/weights`, which is mounted from `./weights`.
 
 To use a YOLO detector, set its exact DeepFace backend name in
 `config/config.ini`, for example:
@@ -207,8 +234,8 @@ recognizer.
   nvidia-ctk --debug cdi list
   ```
 - **Select specific GPUs:**
-  - CDI: set ```device_ids``` to ```"nvidia.com/gpu=0"```, ```"nvidia.com/gpu=1"```, …
-  - NVIDIA driver path: use ```device_ids: ['0','3']``` or ```count: 1```.
+  Change `device_ids` in `docker-compose.gpu.yml` to
+  `"nvidia.com/gpu=0"`, `"nvidia.com/gpu=1"`, and so on.
 
 **Rootless Docker (heads-up)**
 If you run Docker rootless, ensure the daemon can read CDI specs.
@@ -220,14 +247,16 @@ Either keep specs in default locations (```/etc/cdi```, ```/var/run/cdi```) supp
   **Fix**: Enable persistence, use the Docker drop-in above, and ensure udev creates `/dev/nvidia*`.
 
 - **Legacy hook crash**: `nvidia-container-cli: ldcache error ... ldconfig ...`  
-  **Fix**: Ensure CDI is enabled + generate the CDI spec, then use CDI devices in Compose (Option A).
+  **Fix**: Ensure CDI is enabled, regenerate the CDI spec, and use
+  `docker-compose.gpu.yml`.
 
 - **PyTorch error**: `sm_120 is not compatible` or `no kernel image is available`
   **Fix**: Rebuild without cache so the CUDA 12.8 PyTorch wheels are installed:
-  `docker compose build --pull --no-cache`.
+  `docker compose -f docker-compose.yml -f docker-compose.gpu.yml build --pull --no-cache`.
 
 - **TensorFlow reports no GPU**: Run
-  `docker compose run --rm facialrec python3 gpu_diagnostics.py`. If
+  `docker compose -f docker-compose.yml -f docker-compose.gpu.yml run --rm facialrec python3 test.py --gpu`.
+  If
   `nvidia-smi` fails there, repair CDI/container-toolkit access first. If only
   TensorFlow or PyTorch fails, rebuild the image without cache and inspect the
   framework versions printed by the diagnostic.

@@ -22,7 +22,7 @@ WORKDIR /app
 
 COPY req.txt    /app
 COPY main.py    /app
-COPY gpu_diagnostics.py /app
+COPY test.py    /app
 COPY include/   /app/include
 COPY lib/       /app/lib
 COPY db/        /app/db
@@ -37,5 +37,5 @@ RUN pip3 install --no-cache-dir \
 
 RUN pip3 check
 
-#CMD ["bash"]   #DEBUG
-CMD ["python3", "main.py"]
+# Run the base preflight before entering the long-running service.
+CMD ["python3", "test.py", "--base", "--start"]
