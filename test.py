@@ -341,7 +341,11 @@ def check_models(settings: dict[str, Any]) -> str:
     )
 
 
-def check_internal_motion(settings: dict[str, Any], duration: float) -> str:
+def check_internal_motion(
+    settings: dict[str, Any],
+    duration: float,
+    stop_after_first_frame: bool = False,
+) -> str:
     try:
         from lib.motionchecker import MotionChecker
         from lib.streamreader import StreamReader
@@ -364,10 +368,13 @@ def check_internal_motion(settings: dict[str, Any], duration: float) -> str:
     stream.start()
     checker.start()
     observed_motion = False
+    started_at = time.monotonic()
     deadline = time.monotonic() + duration
     try:
         while time.monotonic() < deadline:
             observed_motion = observed_motion or checker.result
+            if stop_after_first_frame and checker.prev_frame is not None:
+                break
             time.sleep(0.2)
     finally:
         checker.stop()
@@ -377,8 +384,9 @@ def check_internal_motion(settings: dict[str, Any], duration: float) -> str:
         raise CheckError(
             f"internal motion test received no frames from {display_url(url)}"
         )
+    elapsed = time.monotonic() - started_at
     state = "motion observed" if observed_motion else "no motion observed"
-    return f"processed {duration:g}s from {display_url(url)}; {state}"
+    return f"processed {elapsed:.1f}s from {display_url(url)}; {state}"
 
 
 def check_external_motion(settings: dict[str, Any], duration: float) -> str:
@@ -526,7 +534,8 @@ def run_base_checks(
             "Internal motion pipeline",
             check_internal_motion,
             settings,
-            min(3.0, timeout),
+            timeout,
+            True,
         )
     else:
         runner.check("External motion endpoint", request_motion, settings)
