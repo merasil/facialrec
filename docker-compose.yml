@@ -6,10 +6,13 @@ services:
       - OPENCV_FFMPEG_CAPTURE_OPTIONS=rtsp_transport;tcp
       - FACIALREC_REQUIRE_GPU=1
       - NVIDIA_DRIVER_CAPABILITIES=compute,utility
+      - CUDA_CACHE_PATH=/var/cache/nvidia/ComputeCache
+      - CUDA_CACHE_MAXSIZE=2147483648
     volumes:
       - ./config:/app/config
       - ./db:/app/db
       - ./weights:/root/.deepface/weights
+      - ./cuda-cache:/var/cache/nvidia/ComputeCache
     # Use CDI devices instead of `gpus: all` to avoid legacy hook
     deploy:
       resources:
