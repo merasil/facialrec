@@ -21,12 +21,6 @@ RUN python3 -m pip install --upgrade pip
 WORKDIR /app
 
 COPY req.txt    /app
-COPY main.py    /app
-COPY test.py    /app
-COPY include/   /app/include
-COPY lib/       /app/lib
-COPY db/        /app/db
-COPY weights/   /root/.deepface/weights
 
 RUN pip3 install --no-cache-dir \
         --index-url "${PYTORCH_INDEX_URL}" \
@@ -36,6 +30,13 @@ RUN pip3 install --no-cache-dir \
  && pip3 install --no-cache-dir "tf-keras==2.21.0"
 
 RUN pip3 check
+
+COPY main.py    /app
+COPY test.py    /app
+COPY include/   /app/include
+COPY lib/       /app/lib
+COPY db/        /app/db
+COPY weights/   /root/.deepface/weights
 
 # Run the base preflight before entering the long-running service.
 CMD ["python3", "test.py", "--base", "--start"]
