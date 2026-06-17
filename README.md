@@ -103,6 +103,7 @@ The base file continues to provide settings such as `build`, volumes, and
 - The NVIDIA CDI device reservation
 - CUDA cache settings
 - `FACIALREC_REQUIRE_GPU=1`
+- `FACIALREC_TF_GPU_MEMORY_LIMIT_MB=2048`
 - GPU checks before the application starts
 
 Use the same file combination for other Compose commands:
@@ -114,6 +115,13 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml down
 
 If the GPU is not available or cannot be used by TensorFlow or PyTorch, the GPU
 variant fails its startup checks instead of silently using the CPU.
+
+By default, the GPU override caps TensorFlow-backed detectors such as
+`retinaface` and `mtcnn` at about 2 GB of GPU memory. This leaves room for
+another process such as Ollama. Increase `FACIALREC_TF_GPU_MEMORY_LIMIT_MB` if
+TensorFlow reports out-of-memory errors for your selected detector or
+recognition model. Set it to `0` or remove the variable to use TensorFlow's
+memory growth mode without a hard cap.
 
 ### NVIDIA host setup
 

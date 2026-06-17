@@ -457,7 +457,9 @@ def check_gpu_environment() -> str:
 
 
 def check_tensorflow_gpu() -> None:
-    import tensorflow as tf
+    from include.face_runtime import face_tf
+
+    tf = face_tf()
 
     print(f"TensorFlow: {tf.__version__}", flush=True)
     print(

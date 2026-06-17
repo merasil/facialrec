@@ -22,6 +22,25 @@ def face_gpu_required() -> bool:
     }
 
 
+def face_tf_memory_limit_mb() -> int | None:
+    face_limit = os.environ.get("FACIALREC_TF_GPU_MEMORY_LIMIT_MB", "").strip()
+    if not face_limit:
+        return None
+    try:
+        face_limit_mb = int(face_limit)
+    except ValueError as face_err:
+        raise FaceRuntimeError(
+            "FACIALREC_TF_GPU_MEMORY_LIMIT_MB must be an integer number of MB"
+        ) from face_err
+    if face_limit_mb < 0:
+        raise FaceRuntimeError(
+            "FACIALREC_TF_GPU_MEMORY_LIMIT_MB must be greater than or equal to 0"
+        )
+    if face_limit_mb == 0:
+        return None
+    return face_limit_mb
+
+
 def face_torch_detector(face_detector: str) -> bool:
     face_name = face_detector.lower()
     return face_name.startswith("yolo")
@@ -69,22 +88,51 @@ def face_tf(face_gpu: int = 0) -> Any:
         raise FaceRuntimeError(f"GPU index {face_gpu} is not available")
 
     face_device = face_gpus[face_gpu]
+    face_memory_limit_mb = face_tf_memory_limit_mb()
     try:
         face_tf_module.config.set_visible_devices(face_device, "GPU")
-        face_tf_module.config.experimental.set_memory_growth(face_device, True)
+        if face_memory_limit_mb is None:
+            face_tf_module.config.experimental.set_memory_growth(face_device, True)
+        else:
+            face_tf_module.config.set_logical_device_configuration(
+                face_device,
+                [
+                    face_tf_module.config.LogicalDeviceConfiguration(
+                        memory_limit=face_memory_limit_mb
+                    )
+                ],
+            )
     except RuntimeError as face_err:
         try:
             face_visible = face_tf_module.config.get_visible_devices("GPU")
-            face_growth = face_tf_module.config.experimental.get_memory_growth(
-                face_device
-            )
+            if face_memory_limit_mb is None:
+                face_configured = (
+                    face_tf_module.config.experimental.get_memory_growth(face_device)
+                )
+            else:
+                face_logical_config = (
+                    face_tf_module.config.get_logical_device_configuration(face_device)
+                )
+                face_configured = (
+                    face_logical_config is not None
+                    and len(face_logical_config) == 1
+                    and face_logical_config[0].memory_limit == face_memory_limit_mb
+                )
         except Exception:
             face_visible = []
-            face_growth = False
-        if face_visible == [face_device] and face_growth:
+            face_configured = False
+        if face_visible == [face_device] and face_configured:
             return face_tf_module
         raise FaceRuntimeError(f"Cannot configure GPU: {face_err}") from face_err
-    logging.info("Using TensorFlow GPU %d: %s", face_gpu, face_device.name)
+    if face_memory_limit_mb is None:
+        logging.info("Using TensorFlow GPU %d: %s", face_gpu, face_device.name)
+    else:
+        logging.info(
+            "Using TensorFlow GPU %d: %s with %d MB memory limit",
+            face_gpu,
+            face_device.name,
+            face_memory_limit_mb,
+        )
     return face_tf_module
 
 

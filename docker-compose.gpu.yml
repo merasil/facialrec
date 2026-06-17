@@ -3,6 +3,7 @@ services:
     command: ["python3", "test.py", "--base", "--gpu", "--start"]
     environment:
       FACIALREC_REQUIRE_GPU: "1"
+      FACIALREC_TF_GPU_MEMORY_LIMIT_MB: "2048"
       NVIDIA_DRIVER_CAPABILITIES: compute,utility
       CUDA_CACHE_PATH: /var/cache/nvidia/ComputeCache
       CUDA_CACHE_MAXSIZE: "2147483648"
