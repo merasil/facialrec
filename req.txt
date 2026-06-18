@@ -10,3 +10,4 @@ retina-face
 fire
 gunicorn
 deepface
+ultralytics

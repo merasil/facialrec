@@ -1,19 +1,12 @@
 services:
   facialrec:
     build: .
+    init: true
     environment:
-      - OPENCV_FFMPEG_CAPTURE_OPTIONS=rtsp_transport;tcp
+      OPENCV_FFMPEG_CAPTURE_OPTIONS: rtsp_transport;tcp
+      FACIALREC_REQUIRE_GPU: "0"
     volumes:
       - ./config:/app/config
       - ./db:/app/db
       - ./weights:/root/.deepface/weights
-    # Use CDI devices instead of `gpus: all` to avoid legacy hook
-    deploy:
-      resources:
-        reservations:
-          devices:
-            - driver: cdi 
-              device_ids:
-                - "nvidia.com/gpu=all"
-              capabilities: ["gpu"]
     restart: unless-stopped
