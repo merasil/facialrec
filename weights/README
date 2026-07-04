@@ -1,1 +1,6 @@
-weights for deepface will be downloaded here
+DeepFace model weights are stored here.
+
+The container mounts this directory to /root/.deepface/weights. Models may be
+downloaded on first start, then reused on later starts.
+
+Keep this directory writable by the container.

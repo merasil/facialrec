@@ -1,1 +1,13 @@
-Put your folders with names and one image inside the db
+Place known identities in this directory.
+
+Expected layout:
+
+db/alice/alice.jpg
+db/bob/bob.png
+
+Rules:
+
+- Use one directory per identity.
+- The image filename must match the directory name.
+- Supported extensions are .jpg, .jpeg, and .png.
+- At least one valid identity image is required before the container can start.
