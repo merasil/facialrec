@@ -37,6 +37,10 @@ RUN mkdir -p /app/config /app/db /root/.deepface/weights
 # Run the base preflight before entering the long-running service.
 CMD ["python3", "test.py", "--base", "--start"]
 
+# Keep standard before gpu-extended: the classic builder stops at its target.
+FROM runtime AS standard
+COPY --from=application /app/ /app/
+
 # Only this target installs YOLO and the PyTorch CUDA stack.
 # GPU Compose files select the TensorFlow GPU base through TENSORFLOW_IMAGE.
 FROM runtime AS gpu-extended
@@ -57,8 +61,4 @@ RUN pip3 install --no-cache-dir \
  && pip3 check
 
 ENV FACIALREC_REQUIRE_TORCH=1
-COPY --from=application /app/ /app/
-
-# A plain BuildKit build defaults to the small, standard CPU variant.
-FROM runtime AS standard
 COPY --from=application /app/ /app/

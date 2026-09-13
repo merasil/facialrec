@@ -18,7 +18,7 @@ It supports CPU operation by default and optional NVIDIA GPU acceleration.
 
 For CPU operation:
 
-- Docker Engine with BuildKit
+- Docker Engine with multi-stage build support (BuildKit or classic builder)
 - Docker Compose V2
 - Access to the configured RTSP stream
 
@@ -128,11 +128,23 @@ packages.
 
 The `standard` build target uses the CPU or GPU base selected by the
 `TENSORFLOW_IMAGE` build argument. The `gpu-extended` target adds the PyTorch and
-YOLO dependencies. BuildKit skips the extended stage when building `standard`.
-The legacy builder may execute unused stages and should not be used.
+YOLO dependencies. The standard stage appears before the extended stage, so both
+BuildKit and the classic builder stop before the PyTorch installation when
+building `standard`.
 Compose selects the base and target together and assigns distinct image tags.
 Images are built locally (`pull_policy: never`); use `up --build` for the first
 start and after changing variant or code.
+
+When using `docker build` directly, specify the target explicitly. For CPU:
+
+```bash
+docker build --target standard -t facialrec:cpu .
+```
+
+For standard GPU, additionally pass
+`--build-arg TENSORFLOW_IMAGE=tensorflow/tensorflow:2.21.0-gpu`.
+For GPU extended, use that GPU base argument and `--target gpu-extended`.
+Without `--target`, Docker builds the last stage, which includes PyTorch/YOLO.
 
 DeepFace's required dependencies remain installed even if the selected model
 does not use all of them. Model weights, reference images, configuration, and
@@ -226,10 +238,17 @@ sufficient.
 Transfer the updated project files, including `.dockerignore` and the new
 `docker-compose.gpu-extended.yml`, to the server. Keep your existing `config`,
 `db`, and `weights` directories. Run the following from the project directory
-in Bash and enable BuildKit:
+in Bash. If Buildx is installed, you can enable BuildKit:
 
 ```bash
 export DOCKER_BUILDKIT=1
+```
+
+If Buildx is unavailable and your Docker installation supports the classic
+builder, select it instead:
+
+```bash
+export DOCKER_BUILDKIT=0
 ```
 
 Then choose exactly one Compose file selection. For CPU:
