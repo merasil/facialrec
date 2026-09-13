@@ -468,16 +468,17 @@ def check_nvidia_smi(timeout: float) -> str:
 def check_gpu_environment() -> str:
     return (
         f"Python={sys.version.split()[0]}, "
-        f"NVIDIA_VISIBLE_DEVICES={os.environ.get('NVIDIA_VISIBLE_DEVICES', '')!r}, "
-        f"CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES', '')!r}, "
-        f"LD_LIBRARY_PATH={os.environ.get('LD_LIBRARY_PATH', '')!r}"
+        f"NVIDIA_VISIBLE_DEVICES={os.environ.get('NVIDIA_VISIBLE_DEVICES')!r}, "
+        f"CUDA_VISIBLE_DEVICES={os.environ.get('CUDA_VISIBLE_DEVICES')!r}, "
+        f"LD_LIBRARY_PATH={os.environ.get('LD_LIBRARY_PATH')!r}"
     )
 
 
 def check_tensorflow_gpu() -> None:
+    # Enable CUDA loader diagnostics before the runtime imports TensorFlow.
+    os.environ.setdefault("TF_CPP_MIN_LOG_LEVEL", "0")
     from include.face_runtime import face_tf
-
-    tf = face_tf()
+    import tensorflow as tf
 
     print(f"TensorFlow: {tf.__version__}", flush=True)
     print(
@@ -488,6 +489,7 @@ def check_tensorflow_gpu() -> None:
     print(f"TensorFlow GPUs: {gpus}", flush=True)
     if not gpus:
         raise CheckError("TensorFlow cannot see a GPU")
+    face_tf()
     with tf.device("/GPU:0"):
         value = tf.reduce_sum(tf.random.normal([1024, 1024]))
     print(f"TensorFlow GPU operation: {float(value):.6f}", flush=True)
