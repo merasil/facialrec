@@ -126,6 +126,15 @@ def load_settings(config_path: str) -> dict[str, Any]:
     if not loaded:
         raise CheckError(f"cannot read config file: {path}")
 
+    if config.has_option("basic", "stream_resize"):
+        raise CheckError(
+            "basic.stream_resize has been replaced by motion.resize_factor. "
+            "Remove stream_resize from [basic] and set resize_factor in [motion] "
+            "(1 = original size; 2 = half width and height). "
+            "The old True setting used a fixed 320x240 size; choose the factor "
+            "for your stream resolution."
+        )
+
     stream_url = required(config, "basic", "stream_url")
     stream_url_lowres = config.get("basic", "stream_url_lowres", fallback="").strip()
     push_url = required(config, "basic", "push_url")
@@ -155,14 +164,12 @@ def load_settings(config_path: str) -> dict[str, Any]:
         background_alpha = config.getfloat(
             "motion", "background_alpha", fallback=0.05
         )
+        motion_resize_factor = config.getint("motion", "resize_factor", fallback=1)
     except (ValueError, configparser.Error) as error:
         raise CheckError(f"invalid numeric config value: {error}") from error
 
     use_internal_motion = parse_bool(
         config.get("motion", "use_internal", fallback="False")
-    )
-    stream_resize = parse_bool(
-        config.get("basic", "stream_resize", fallback="False")
     )
 
     validate_url("basic.stream_url", stream_url, {"rtsp", "rtsps"})
@@ -187,6 +194,7 @@ def load_settings(config_path: str) -> dict[str, Any]:
     require_range("motion.min_area_percent", motion_min_area, 0.0, 100.0)
     require_minimum("motion.cooldown_seconds", motion_cooldown, 0)
     require_range("motion.background_alpha", background_alpha, 0.0, 1.0)
+    require_minimum("motion.resize_factor", motion_resize_factor, 1)
 
     return {
         "config_path": str(path),
@@ -202,7 +210,7 @@ def load_settings(config_path: str) -> dict[str, Any]:
         "enforce": enforce,
         "database_path": database_path,
         "use_internal_motion": use_internal_motion,
-        "stream_resize": stream_resize,
+        "motion_resize_factor": motion_resize_factor,
         "motion_threshold": motion_threshold,
         "motion_min_area": motion_min_area,
         "motion_cooldown": motion_cooldown,
@@ -362,7 +370,7 @@ def check_internal_motion(
         min_area=settings["motion_min_area"],
         cooldown_seconds=settings["motion_cooldown"],
         verbose=settings["verbose"],
-        resize=settings["stream_resize"],
+        resize_factor=settings["motion_resize_factor"],
         background_alpha=settings["background_alpha"],
     )
     stream.start()
@@ -372,6 +380,8 @@ def check_internal_motion(
     deadline = time.monotonic() + duration
     try:
         while time.monotonic() < deadline:
+            if checker.processing_error is not None:
+                raise CheckError(f"internal motion processing failed: {checker.processing_error}")
             observed_motion = observed_motion or checker.result
             if stop_after_first_frame and checker.prev_frame is not None:
                 break
@@ -380,13 +390,20 @@ def check_internal_motion(
         checker.stop()
         stream.stop()
 
+    if checker.processing_error is not None:
+        raise CheckError(f"internal motion processing failed: {checker.processing_error}")
     if checker.prev_frame is None:
         raise CheckError(
             f"internal motion test received no frames from {display_url(url)}"
         )
     elapsed = time.monotonic() - started_at
     state = "motion observed" if observed_motion else "no motion observed"
-    return f"processed {elapsed:.1f}s from {display_url(url)}; {state}"
+    height, width = checker.prev_frame.shape
+    return (
+        f"processed {elapsed:.1f}s from {display_url(url)}; "
+        f"motion resolution={width}x{height}, "
+        f"resize_factor={settings['motion_resize_factor']}; {state}"
+    )
 
 
 def check_external_motion(settings: dict[str, Any], duration: float) -> str:

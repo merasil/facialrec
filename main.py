@@ -83,7 +83,6 @@ try:
     stream_url_lowres = config.get("basic", "stream_url_lowres", fallback="").strip()
     push_url = config["basic"]["push_url"]
     motion_url = config["basic"]["motion_url"]
-    stream_resize = str2bool(config.get("basic", "stream_resize", fallback="False"))
 except KeyError as e:
     logging.error(f"Missing required basic config: {e}")
     sys.exit(1)
@@ -116,6 +115,7 @@ try:
     motion_min_area = float(config.get("motion", "min_area_percent", fallback="0.2"))
     motion_cooldown = int(config.get("motion", "cooldown_seconds", fallback="5"))
     motion_bg_alpha = float(config.get("motion", "background_alpha", fallback="0.05"))
+    motion_resize_factor = int(config.get("motion", "resize_factor", fallback="1"))
 except (KeyError, ValueError) as e:
     logging.warning(f"Motion config error, using defaults: {e}")
     use_internal_motion = False
@@ -123,6 +123,7 @@ except (KeyError, ValueError) as e:
     motion_min_area = 0.2
     motion_cooldown = 5
     motion_bg_alpha = 0.05
+    motion_resize_factor = 1
 
 # Initialize StreamReaders
 # Main stream for face recognition
@@ -151,7 +152,7 @@ if use_internal_motion:
         min_area=motion_min_area,
         cooldown_seconds=motion_cooldown,
         verbose=verbose,
-        resize=stream_resize,
+        resize_factor=motion_resize_factor,
         background_alpha=motion_bg_alpha
     )
 else:

@@ -55,6 +55,48 @@ When `motion.use_internal = True`, `motion_url` is not used. Internal motion
 detection uses the low-resolution stream when configured, otherwise the main
 stream.
 
+### Motion frame size
+
+Use `resize_factor` in `[motion]` to reduce the work done by internal motion
+detection:
+
+```ini
+[motion]
+use_internal = True
+resize_factor = 1
+```
+
+The factor must be an integer greater than or equal to 1. It divides the actual
+stream width and height equally, preserving the aspect ratio except for rounding
+down to whole pixels. Factor 1 skips resizing. For a 640x360 substream, start with
+factor 1; factor 2 produces 320x180 and processes one quarter as many pixels.
+Both resulting dimensions must be at least 32 pixels, which the startup motion
+check validates against the stream. An excessive factor fails that check with
+the source and resulting dimensions in the error message.
+The existing `test.py` preflight validates the factor with the other numeric
+settings before starting the service. Run `python3 test.py --base --start` when
+starting outside Docker as well; `main.py` reads the settings directly.
+
+Blur and dilation are scaled with the factor to keep their extent in the original
+scene approximately consistent. Minimum motion area remains a percentage of the
+processed image. Small or distant movements can still be lost when reducing the
+resolution; check sensitivity in daylight and at night after changing the factor.
+The service logs the source and processing dimensions on the first frame and
+after a resolution change. A resolution change resets the background reference
+and any active motion cooldown before detection resumes on subsequent frames.
+
+Resizing happens after receiving and decoding the motion stream. It saves work
+in motion analysis, not network bandwidth or video decoding. Face recognition
+continues to use the main stream at its original resolution.
+
+If your existing configuration contains `stream_resize` in `[basic]`, remove it
+and add `resize_factor` in `[motion]`. Startup rejects the old option with a
+migration message, even if the new option is also present. Old `False` corresponds
+to factor 1. Old `True` forced every stream to 320x240, so there is no universal
+replacement factor: for 640x480, factor 2 retains that size; for 640x360, factor 2
+now correctly produces 320x180. With a high-resolution motion stream, choose the
+factor according to its actual size. Omitting the new option defaults to factor 1.
+
 ### Face database
 
 Each identity needs its own directory and an image with the same name:
