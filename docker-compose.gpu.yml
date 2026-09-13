@@ -1,5 +1,10 @@
 services:
   facialrec:
+    image: facialrec:gpu
+    build:
+      target: standard
+      args:
+        TENSORFLOW_IMAGE: tensorflow/tensorflow:2.21.0-gpu
     command: ["python3", "test.py", "--base", "--gpu", "--start"]
     environment:
       FACIALREC_REQUIRE_GPU: "1"

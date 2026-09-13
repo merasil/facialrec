@@ -18,7 +18,7 @@ It supports CPU operation by default and optional NVIDIA GPU acceleration.
 
 For CPU operation:
 
-- Docker Engine
+- Docker Engine with BuildKit
 - Docker Compose V2
 - Access to the configured RTSP stream
 
@@ -111,6 +111,35 @@ db/
 
 Supported image extensions are `.jpg`, `.jpeg`, and `.png`.
 
+## Image variants
+
+The project builds three local images from the same Dockerfile:
+
+| Variant | Local image | TensorFlow base | Additional frameworks |
+| --- | --- | --- | --- |
+| CPU | `facialrec:cpu` | `tensorflow/tensorflow:2.21.0` | None |
+| GPU | `facialrec:gpu` | `tensorflow/tensorflow:2.21.0-gpu` | None |
+| GPU extended | `facialrec:gpu-extended` | `tensorflow/tensorflow:2.21.0-gpu` | PyTorch CUDA 12.8, Torchvision, Ultralytics/YOLO |
+
+CPU and GPU support RetinaFace + Facenet512 and other backends provided by their
+installed dependencies. YOLO requires GPU extended. Model names are still chosen
+in `config/config.ini`; changing the model configuration does not install extra
+packages.
+
+The `standard` build target uses the CPU or GPU base selected by the
+`TENSORFLOW_IMAGE` build argument. The `gpu-extended` target adds the PyTorch and
+YOLO dependencies. BuildKit skips the extended stage when building `standard`.
+The legacy builder may execute unused stages and should not be used.
+Compose selects the base and target together and assigns distinct image tags.
+Images are built locally (`pull_policy: never`); use `up --build` for the first
+start and after changing variant or code.
+
+DeepFace's required dependencies remain installed even if the selected model
+does not use all of them. Model weights, reference images, configuration, and
+CUDA cache files are excluded from the build context and provided through mounts.
+Application code is copied after dependency installation, so changing Python
+files does not invalidate the expensive package installation layers.
+
 ## Run on CPU
 
 The base Compose file does not request a GPU:
@@ -119,12 +148,12 @@ The base Compose file does not request a GPU:
 docker compose up -d --build
 ```
 
-The image contains CUDA-capable TensorFlow and PyTorch packages, but both
-frameworks can fall back to CPU execution when no GPU is exposed.
+This uses the TensorFlow CPU base without installing PyTorch, Torchvision, or
+Ultralytics. The container does not request an NVIDIA device.
 
 CPU performance depends heavily on the selected models. Detectors such as
 `opencv` or `ssd` are generally better starting points for CPU systems than
-larger RetinaFace or YOLO variants.
+RetinaFace.
 
 ## Run with an NVIDIA GPU
 
@@ -139,8 +168,8 @@ docker compose \
   up -d --build
 ```
 
-The base file continues to provide settings such as `build`, volumes, and
-`restart: unless-stopped`. The GPU override only adds:
+The base file continues to provide the build context, data mounts, and
+`restart: unless-stopped`. The GPU override selects the standard GPU image and adds:
 
 - The NVIDIA CDI device reservation
 - CUDA cache settings
@@ -155,8 +184,9 @@ docker compose -f docker-compose.yml -f docker-compose.gpu.yml logs -f
 docker compose -f docker-compose.yml -f docker-compose.gpu.yml down
 ```
 
-If the GPU is not available or cannot be used by TensorFlow or PyTorch, the GPU
-variant fails its startup checks instead of silently using the CPU.
+If the GPU is not available or cannot be used by TensorFlow, the GPU variant
+fails its startup checks instead of silently using the CPU. PyTorch is not
+required in this variant.
 
 By default, the GPU override caps TensorFlow-backed detectors such as
 `retinaface` and `mtcnn` at about 2 GB of GPU memory. This leaves room for
@@ -164,6 +194,99 @@ another process such as Ollama. Increase `FACIALREC_TF_GPU_MEMORY_LIMIT_MB` if
 TensorFlow reports out-of-memory errors for your selected detector or
 recognition model. Set it to `0` or remove the variable to use TensorFlow's
 memory growth mode without a hard cap.
+
+### GPU extended with YOLO
+
+Add the extended override after the base and GPU files:
+
+```bash
+docker compose \
+  -f docker-compose.yml \
+  -f docker-compose.gpu.yml \
+  -f docker-compose.gpu-extended.yml \
+  up -d --build
+```
+
+This selects `facialrec:gpu-extended` and adds PyTorch, Torchvision, and
+Ultralytics. The GPU override still supplies the NVIDIA device access, memory
+settings, and startup command. Use all three files for subsequent build, run,
+logs, and down commands for this variant.
+
+The extended image sets `FACIALREC_REQUIRE_TORCH=1`, so its GPU preflight checks
+both TensorFlow and PyTorch. A missing or unusable PyTorch installation fails the
+extended preflight. This flag is set in the image; it does not install packages.
+
+For example, configure `detector_model = yolov8m` and keep
+`recognition_model = Facenet512` to detect faces with PyTorch/YOLO and recognize
+them with TensorFlow. With RetinaFace + Facenet512, the standard GPU variant is
+sufficient.
+
+### Build and verify on your server
+
+Transfer the updated project files, including `.dockerignore` and the new
+`docker-compose.gpu-extended.yml`, to the server. Keep your existing `config`,
+`db`, and `weights` directories. Run the following from the project directory
+in Bash and enable BuildKit:
+
+```bash
+export DOCKER_BUILDKIT=1
+```
+
+Then choose exactly one Compose file selection. For CPU:
+
+```bash
+export COMPOSE_FILE=docker-compose.yml
+```
+
+For GPU with RetinaFace + Facenet512:
+
+```bash
+export COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml
+```
+
+For GPU extended with YOLO:
+
+```bash
+export COMPOSE_FILE=docker-compose.yml:docker-compose.gpu.yml:docker-compose.gpu-extended.yml
+```
+
+Validate the selected Compose configuration and build its image:
+
+```bash
+docker compose config --quiet
+docker compose --progress plain build facialrec
+```
+
+Proceed only after the build succeeds. Run the existing preflight as a one-off
+container. For CPU:
+
+```bash
+docker compose run --rm facialrec python3 test.py --base
+```
+
+For either GPU variant:
+
+```bash
+docker compose run --rm facialrec python3 test.py --base --gpu
+```
+
+Use `detector_model = retinaface` and `recognition_model = Facenet512` to test
+the standard variants. To also verify YOLO in the extended image, set
+`detector_model = yolov8m` in your configuration before running its preflight.
+The preflight does not call the door-opening endpoint. It may download missing
+model weights into the mounted `weights` directory.
+
+After a successful preflight, start the selected service and inspect its logs:
+
+```bash
+docker compose up -d --no-build
+docker compose logs --tail=100 -f facialrec
+```
+
+Compare the sizes of the variants you have built with `docker image ls facialrec`.
+Use the same `COMPOSE_FILE` selection for subsequent commands; environment
+variables need to be set again in a new shell. Image tags coexist, but these
+Compose selections manage the same service and replace it when switching variants.
 
 ### NVIDIA host setup
 
@@ -211,6 +334,10 @@ python3 test.py --base --gpu --start
 ```
 
 `main.py` starts only when all selected checks pass.
+
+`--gpu` checks NVIDIA access and TensorFlow. It also checks PyTorch when that
+package is installed or `FACIALREC_REQUIRE_TORCH=1`. Standard images report the
+PyTorch test as skipped. CPU startup does not request GPU tests.
 
 The base startup check validates:
 
@@ -261,7 +388,7 @@ docker compose \
 Available options:
 
 - `--base`: configuration, database, streams, motion source, and models
-- `--gpu`: NVIDIA, TensorFlow GPU, and PyTorch CUDA checks
+- `--gpu`: NVIDIA and TensorFlow GPU checks; PyTorch when installed or required
 - `--motion`: observe the configured motion detector
 - `--all`: run all checks
 - `--start`: start `main.py` after successful checks
@@ -282,13 +409,13 @@ example:
 detector_model = yolov8m
 ```
 
-YOLO detectors use PyTorch. Other detectors such as RetinaFace and MTCNN use
-TensorFlow-backed components. Available performance and memory requirements
-vary by detector and hardware.
+YOLO detectors require the GPU extended image and use PyTorch. Other detectors
+such as RetinaFace and MTCNN use TensorFlow-backed components. Available
+performance and memory requirements vary by detector and hardware.
 
 `fastmtcnn` is not bundled because its current dependency constraints conflict
-with the PyTorch version used by this image. Use another supported detector
-such as `opencv`, `ssd`, `mtcnn`, `retinaface`, or a YOLO variant.
+with the PyTorch version used by the extended image. Use another supported
+detector such as `opencv`, `ssd`, `mtcnn`, `retinaface`, or a YOLO variant.
 
 ## Persistent data
 
@@ -300,7 +427,10 @@ The Compose configuration mounts:
 - `./cuda-cache` to `/var/cache/nvidia/ComputeCache` in GPU mode
 
 Model weights may be downloaded on the first start and are retained in the
-`weights` directory.
+`weights` directory. Existing weights and reference images remain on the host
+when changing image variants. They are no longer copied into the image. If you
+use `docker run` directly, provide the configuration, database, and weights
+mounts as well.
 
 ## Troubleshooting
 

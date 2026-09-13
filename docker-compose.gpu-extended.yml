@@ -1,0 +1,6 @@
+# Combine with docker-compose.yml and docker-compose.gpu.yml.
+services:
+  facialrec:
+    image: facialrec:gpu-extended
+    build:
+      target: gpu-extended

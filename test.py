@@ -4,6 +4,7 @@
 import argparse
 import configparser
 import faulthandler
+import importlib.util
 import json
 import logging
 import os
@@ -573,7 +574,7 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument(
         "--gpu",
         action="store_true",
-        help="check nvidia-smi plus TensorFlow and PyTorch GPU operations",
+        help="check NVIDIA and TensorFlow GPU operations, plus PyTorch when installed or required",
     )
     parser.add_argument(
         "--motion",
@@ -660,12 +661,17 @@ def main() -> int:
             "tensorflow",
             args.gpu_timeout,
         )
-        runner.check(
-            "PyTorch GPU",
-            check_gpu_framework,
-            "torch",
-            args.gpu_timeout,
-        )
+        if parse_bool(os.environ.get("FACIALREC_REQUIRE_TORCH", "0")) or (
+            importlib.util.find_spec("torch") is not None
+        ):
+            runner.check(
+                "PyTorch GPU",
+                check_gpu_framework,
+                "torch",
+                args.gpu_timeout,
+            )
+        else:
+            print("\n[SKIP] PyTorch GPU: not installed in this image variant", flush=True)
 
     if run_base and settings is not None:
         if args.start and runner.failed:

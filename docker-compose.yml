@@ -1,6 +1,12 @@
 services:
   facialrec:
-    build: .
+    image: facialrec:cpu
+    pull_policy: never
+    build:
+      context: .
+      target: standard
+      args:
+        TENSORFLOW_IMAGE: tensorflow/tensorflow:2.21.0
     init: true
     environment:
       OPENCV_FFMPEG_CAPTURE_OPTIONS: rtsp_transport;tcp

@@ -54,7 +54,11 @@ def face_prepare_detector(face_detector: str) -> None:
             getattr(face_module, "YOLO")
     except (AttributeError, ImportError) as face_err:
         raise FaceRuntimeError(
-            f"Cannot import backend for detector {face_detector}: {face_err}"
+            f"Cannot import backend for detector {face_detector}: {face_err}. "
+            "YOLO detectors require the GPU extended image: combine "
+            "docker-compose.yml, docker-compose.gpu.yml and "
+            "docker-compose.gpu-extended.yml. For a local Python installation, "
+            "install ultralytics and compatible PyTorch/torchvision packages."
         ) from face_err
 
 
