@@ -5,6 +5,7 @@ services:
       target: standard
       args:
         TENSORFLOW_IMAGE: tensorflow/tensorflow:2.21.0-gpu
+        CUDNN_PACKAGE: libcudnn9-cuda-12=9.3.0.75-1
     command: ["python3", "test.py", "--base", "--gpu", "--start"]
     environment:
       FACIALREC_REQUIRE_GPU: "1"

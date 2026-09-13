@@ -33,6 +33,16 @@ RUN pip3 install --no-cache-dir -r req.txt \
 
 RUN pip3 check
 
+# TensorFlow GPU needs cuDNN even when PyTorch is not installed.
+# Select only the runtime package; CUDA libraries come from the GPU base image.
+ARG CUDNN_PACKAGE=""
+RUN if [ -n "${CUDNN_PACKAGE}" ]; then \
+        apt-get update \
+        && apt-get install -y --no-install-recommends "${CUDNN_PACKAGE}" \
+        && rm -rf /var/lib/apt/lists/* \
+        && ldconfig; \
+    fi
+
 RUN mkdir -p /app/config /app/db /root/.deepface/weights
 
 # Run the base preflight before entering the long-running service.

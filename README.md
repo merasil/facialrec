@@ -126,6 +126,11 @@ installed dependencies. YOLO requires GPU extended. Model names are still chosen
 in `config/config.ini`; changing the model configuration does not install extra
 packages.
 
+GPU variants explicitly install the cuDNN 9.3 runtime package for TensorFlow
+2.21, independently of PyTorch. The CPU variant does not install cuDNN.
+The GPU base image must provide the NVIDIA CUDA APT repository and CUDA runtime
+libraries; the build installs no cuDNN development or static-library packages.
+
 The `standard` build target uses the CPU or GPU base selected by the
 `TENSORFLOW_IMAGE` build argument. The `gpu-extended` target adds the PyTorch and
 YOLO dependencies. The standard stage appears before the extended stage, so both
@@ -142,8 +147,9 @@ docker build --target standard -t facialrec:cpu .
 ```
 
 For standard GPU, additionally pass
-`--build-arg TENSORFLOW_IMAGE=tensorflow/tensorflow:2.21.0-gpu`.
-For GPU extended, use that GPU base argument and `--target gpu-extended`.
+`--build-arg TENSORFLOW_IMAGE=tensorflow/tensorflow:2.21.0-gpu` and
+`--build-arg CUDNN_PACKAGE=libcudnn9-cuda-12=9.3.0.75-1`.
+For GPU extended, use both GPU build arguments and `--target gpu-extended`.
 Without `--target`, Docker builds the last stage, which includes PyTorch/YOLO.
 
 DeepFace's required dependencies remain installed even if the selected model
