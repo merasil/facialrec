@@ -15,6 +15,7 @@ RUN apt-get update && \
     && apt-get install -y --no-install-recommends \
         libgl1 \
         libglib2.0-0 \
+        python3-cairo \
     && rm -rf /var/lib/apt/lists/*
 
 RUN rm -f /etc/ld.so.conf.d/z-cuda-stubs.conf \
